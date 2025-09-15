@@ -22,6 +22,7 @@ executable ebpf-val
     Interpreter
 
   build-depends:
+    array,
     base >=4.14 && <5,
     containers,
     ebpf-tools ==0.2.0.0,

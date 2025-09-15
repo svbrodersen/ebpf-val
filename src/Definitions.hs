@@ -1,11 +1,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module Types where
+module Definitions where
 
-import Data.Ix as Ix
+import Data.Array as Array
 import Data.Map as Map
+import Data.Set (Set)
 import Ebpf.Asm
-import qualified GHC.Arr as Ix
+import Ebpf_cfg (Label)
 
 data Bound = NegInf | Val Integer | PosInf deriving (Eq, Ord)
 
@@ -174,6 +175,18 @@ lessThanEqualInterval (Interval a b) (Interval c d) =
       second = intersectInterval (Interval a PosInf) (Interval c d)
    in (first, second)
 
+notEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
+notEqualInterval (Interval a b) (Interval c d) =
+  let overlap = max a c <= min b d
+   in ( if overlap
+          then
+            let i1 = Interval a b
+                i2 = Interval c d
+             in (subInterval i1 i2, subInterval i2 i1)
+          else
+            (Value $ Interval a b, Value $ Interval c d)
+      )
+
 instance Show Interval where
   show (Interval lo hi) = "[" ++ show lo ++ ", " ++ show hi ++ "]"
 
@@ -254,27 +267,28 @@ instance Num IntervalM where
   signum _ = Bottom
   fromInteger i = Value $ Interval (Val i) (Val i)
 
-type Mem = Ix.Array Integer IntervalM
+type Mem = Array Int IntervalM
 
 data State = State
-  { registers :: Map.Map Reg IntervalM
+  { registers :: Array Int IntervalM
   , memory :: Mem
+  , dependencies :: Map.Map Label (Set Label)
   }
   deriving (Eq)
 
 instance Show State where
   show s =
-    let (lo, hi) = Ix.bounds $ memory s
+    let (lo, hi) = bounds $ memory s
      in "Regs: "
-          ++ show (Map.toList $ registers s)
+          ++ show (Array.elems $ registers s)
           ++ "\n"
           ++ "Mem: "
-          ++ show (zip [lo .. hi] (Ix.elems (memory s)))
+          ++ show (zip [lo .. hi] (Array.elems (memory s)))
 
-numRegs :: Integer
-numRegs = 11
+numRegs :: Int
+numRegs = 12
 
-memSize :: Integer
+memSize :: Int
 memSize = 512
 
 topIntervalM :: IntervalM
@@ -284,11 +298,16 @@ topIntervalM = return $ Interval NegInf PosInf
 initState :: State
 initState =
   State
-    { registers = empty
+    { registers =
+        array
+          (0, numRegs - 1)
+          [ (i, topIntervalM) | i <- [0 .. numRegs - 1]
+          ]
     , memory =
-        Ix.array
+        array
           (0, memSize - 1)
           [ (i, topIntervalM)
           | i <- [0 .. memSize - 1]
           ]
+    , dependencies = empty
     }

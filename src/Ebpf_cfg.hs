@@ -16,13 +16,11 @@ module Ebpf_cfg (
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified System.Environment as Sys
 import Text.Printf
 
 import Data.Text.Display
 
 import Ebpf.Asm
-import Ebpf.AsmParser
 import Ebpf.Display ()
 
 -- Types
