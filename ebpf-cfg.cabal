@@ -1,9 +1,9 @@
 cabal-version: 3.4
 tested-with: ghc ==9.6.7
-name: ebpf-cfg
+name: ebpf-val
 version: 0.1.0.0
-synopsis: Starter code for working with a CFG for eBPF.
-homepage: https://github.com/kfl/ebpf-cfg
+synopsis: Ebpf value analysis.
+homepage: https://github.com/svbrodersen/ebpf-val
 license: MIT
 license-file: LICENSE
 author: Simon Vinding Brodresen
@@ -19,6 +19,7 @@ executable ebpf-val
   other-modules:
     Definitions
     Ebpf_cfg
+    Interpreter
 
   build-depends:
     base >=4.14 && <5,

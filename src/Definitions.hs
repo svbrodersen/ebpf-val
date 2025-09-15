@@ -2,25 +2,30 @@
 
 module Types where
 
+import Data.Ix as Ix
 import Data.Map as Map
 import Ebpf.Asm
-import GHC.Arr
+import qualified GHC.Arr as Ix
 
-data Bound = NegInf | Val Int | PosInf deriving (Eq, Ord)
+data Bound = NegInf | Val Integer | PosInf deriving (Eq, Ord)
 
 addBound :: Bound -> Bound -> BottomM Bound
-addBound NegInf _ = Value NegInf
-addBound _ NegInf = Value NegInf
-addBound PosInf _ = Value PosInf
-addBound _ PosInf = Value PosInf
+addBound NegInf (Val _) = Value NegInf
+addBound (Val _) NegInf = Value NegInf
+addBound PosInf (Val _) = Value PosInf
+addBound (Val _) PosInf = Value PosInf
 addBound (Val x) (Val y) = return $ Val (x + y)
+-- The rest are undefined
+addBound _ _ = Bottom
 
 subBound :: Bound -> Bound -> BottomM Bound
-subBound NegInf _ = Value NegInf
-subBound _ PosInf = Value NegInf
-subBound PosInf _ = Value PosInf
-subBound _ NegInf = Value PosInf
+subBound NegInf (Val _) = Value NegInf
+subBound (Val _) PosInf = Value NegInf
+subBound PosInf (Val _) = Value PosInf
+subBound (Val _) NegInf = Value PosInf
 subBound (Val x) (Val y) = return $ Val (x - y)
+-- Rest undefined
+subBound _ _ = Bottom
 
 mulBound :: Bound -> Bound -> BottomM Bound
 mulBound NegInf NegInf = Value PosInf
@@ -30,32 +35,30 @@ mulBound PosInf PosInf = Value PosInf
 mulBound NegInf (Val x)
   | x > 0 = Value NegInf
   | x < 0 = Value PosInf
-  | x == 0 = Bottom
+  | x == 0 = Value $ Val 0
 mulBound PosInf (Val x)
   | x > 0 = Value PosInf
   | x < 0 = Value NegInf
-  | x == 0 = Bottom
+  -- Non-standard mentioned in Mine
+  | x == 0 = Value $ Val 0
 mulBound (Val x) NegInf = mulBound NegInf (Val x)
 mulBound (Val x) PosInf = mulBound PosInf (Val x)
 mulBound (Val x) (Val y) = return $ Val (x * y)
-mulBound _ _ = Bottom
+mulBound _ _ = error "undefined multiplication"
 
 divBound :: Bound -> Bound -> BottomM Bound
-divBound _ (Val 0) = Bottom
 divBound (Val x) (Val y) = return $ Val (x `div` y)
-divBound NegInf NegInf = Bottom
-divBound PosInf PosInf = Bottom
-divBound NegInf PosInf = return $ Val 0
-divBound PosInf NegInf = return $ Val 0
+divBound _ PosInf = return $ Val 0
+divBound _ NegInf = return $ Val 0
 divBound NegInf (Val y)
   | y > 0 = Value NegInf
   | y < 0 = Value PosInf
+  | y == 0 = Bottom
 divBound PosInf (Val y)
   | y > 0 = Value PosInf
   | y < 0 = Value NegInf
-divBound (Val _) NegInf = return $ Val 0
-divBound (Val _) PosInf = return $ Val 0
-divBound _ _ = Bottom
+  | y == 0 = Bottom
+divBound _ _ = error "undefined division"
 
 negateBound :: Bound -> BottomM Bound
 negateBound NegInf = Value PosInf
@@ -69,9 +72,8 @@ instance Show Bound where
 
 data Interval = Interval Bound Bound deriving (Eq, Ord)
 
--- Order structure
 isSubsetEqual :: Interval -> Interval -> Bool
-isSubsetEqual (Interval a b) (Interval c d) = a >= c && b <= d
+isSubsetEqual (Interval a b) (Interval c d) = (a >= c) && (b <= d)
 
 unionInterval :: Interval -> Interval -> IntervalM
 unionInterval (Interval a b) (Interval c d) =
@@ -147,6 +149,31 @@ wideningInterval (Interval l1 u1) (Interval l2 u2) =
         | otherwise = u1
    in return $ Interval l u
 
+bitWiseInterval :: Interval -> Interval -> IntervalM
+bitWiseInterval _ _ = return $ Interval NegInf PosInf
+
+-- Comparison operators
+equalInterval :: Interval -> Interval -> (IntervalM, IntervalM)
+equalInterval i1 i2 =
+  let first = intersectInterval i1 i2
+      second = first
+   in (first, second)
+
+lessThanInterval :: Interval -> Interval -> (IntervalM, IntervalM)
+lessThanInterval (Interval a b) (Interval c d) =
+  case (addBound a (Val 1), subBound d (Val 1)) of
+    (Value a', Value d') ->
+      let first = intersectInterval (Interval a b) (Interval NegInf d')
+          second = intersectInterval (Interval a' PosInf) (Interval c d)
+       in (first, second)
+    (_, _) -> (Bottom, Bottom)
+
+lessThanEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
+lessThanEqualInterval (Interval a b) (Interval c d) =
+  let first = intersectInterval (Interval a b) (Interval NegInf d)
+      second = intersectInterval (Interval a PosInf) (Interval c d)
+   in (first, second)
+
 instance Show Interval where
   show (Interval lo hi) = "[" ++ show lo ++ ", " ++ show hi ++ "]"
 
@@ -164,7 +191,6 @@ instance Functor BottomM where
 
 instance Applicative BottomM where
   pure = Value
-
   Bottom <*> _ = Bottom
   _ <*> Bottom = Bottom
   Value f <*> Value x = Value (f x)
@@ -175,6 +201,12 @@ instance Monad BottomM where
 
 type IntervalM = BottomM Interval
 
+wrapFunc :: (Interval -> Interval -> IntervalM) -> IntervalM -> IntervalM -> IntervalM
+wrapFunc f m1 m2 = do
+  i1 <- m1
+  i2 <- m2
+  f i1 i2
+
 -- Order structure
 isSubsetEqualM :: IntervalM -> IntervalM -> Bool
 isSubsetEqualM Bottom _ = True
@@ -182,46 +214,36 @@ isSubsetEqualM _ Bottom = False
 isSubsetEqualM (Value i1) (Value i2) = isSubsetEqual i1 i2
 
 unionIntervalM :: IntervalM -> IntervalM -> IntervalM
-unionIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  unionInterval i1 i2
+unionIntervalM = wrapFunc unionInterval
 
 intersectIntervalM :: IntervalM -> IntervalM -> IntervalM
-intersectIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  intersectInterval i1 i2
+intersectIntervalM = wrapFunc intersectInterval
 
 -- Abstract operators
 addIntervalM :: IntervalM -> IntervalM -> IntervalM
-addIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  addInterval i1 i2
+addIntervalM = wrapFunc addInterval
 
 subIntervalM :: IntervalM -> IntervalM -> IntervalM
-subIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  subInterval i1 i2
+subIntervalM = wrapFunc subInterval
 
 mulIntervalM :: IntervalM -> IntervalM -> IntervalM
-mulIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  mulInterval i1 i2
+mulIntervalM = wrapFunc mulInterval
 
 divIntervalM :: IntervalM -> IntervalM -> IntervalM
-divIntervalM m1 m2 = do
-  i1 <- m1
-  i2 <- m2
-  divInterval i1 i2
+divIntervalM = wrapFunc divInterval
 
 negateIntervalM :: IntervalM -> IntervalM
 negateIntervalM m1 = do
   i <- m1
   negateInterval i
+
+wideningIntervalM :: IntervalM -> IntervalM -> IntervalM
+wideningIntervalM i Bottom = i
+wideningIntervalM Bottom i = i
+wideningIntervalM m1 m2 = wrapFunc wideningInterval m1 m2
+
+bitWiseIntervalM :: IntervalM -> IntervalM -> IntervalM
+bitWiseIntervalM = wrapFunc bitWiseInterval
 
 instance Num IntervalM where
   (+) = addIntervalM
@@ -230,9 +252,9 @@ instance Num IntervalM where
   negate = negateIntervalM
   abs _ = Bottom
   signum _ = Bottom
-  fromInteger _ = Bottom
+  fromInteger i = Value $ Interval (Val i) (Val i)
 
-type Mem = Array Int IntervalM
+type Mem = Ix.Array Integer IntervalM
 
 data State = State
   { registers :: Map.Map Reg IntervalM
@@ -242,18 +264,31 @@ data State = State
 
 instance Show State where
   show s =
-    let (lo, hi) = bounds $ memory s
+    let (lo, hi) = Ix.bounds $ memory s
      in "Regs: "
           ++ show (Map.toList $ registers s)
           ++ "\n"
           ++ "Mem: "
-          ++ show (zip [lo .. hi] (GHC.Arr.elems (memory s)))
+          ++ show (zip [lo .. hi] (Ix.elems (memory s)))
 
-numRegs :: Int
+numRegs :: Integer
 numRegs = 11
 
-memSize :: Int
+memSize :: Integer
 memSize = 512
 
-topInterval :: Interval
-topInterval = Interval NegInf PosInf
+topIntervalM :: IntervalM
+topIntervalM = return $ Interval NegInf PosInf
+
+-- Create the initial state with 512 memory cells all set to top
+initState :: State
+initState =
+  State
+    { registers = empty
+    , memory =
+        Ix.array
+          (0, memSize - 1)
+          [ (i, topIntervalM)
+          | i <- [0 .. memSize - 1]
+          ]
+    }
