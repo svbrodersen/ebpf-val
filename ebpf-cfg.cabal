@@ -16,7 +16,10 @@ common warnings
 executable ebpf-val
   import: warnings
   main-is: Main.hs
-  other-modules: Ebpf_cfg
+  other-modules:
+    Definitions
+    Ebpf_cfg
+
   build-depends:
     base >=4.14 && <5,
     containers,
