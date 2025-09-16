@@ -44,13 +44,13 @@ mulBound PosInf (Val x)
   | x == 0 = Value $ Val 0
 mulBound (Val x) NegInf = mulBound NegInf (Val x)
 mulBound (Val x) PosInf = mulBound PosInf (Val x)
-mulBound (Val x) (Val y) = return $ Val (x * y)
-mulBound _ _ = error "undefined multiplication"
+mulBound (Val x) (Val y) = Value $ Val (x * y)
+mulBound _ _ = Bottom
 
 divBound :: Bound -> Bound -> BottomM Bound
-divBound (Val x) (Val y) = return $ Val (x `div` y)
-divBound _ PosInf = return $ Val 0
-divBound _ NegInf = return $ Val 0
+divBound (Val x) (Val y) = Value $ Val (x `div` y)
+divBound _ PosInf = Value $ Val 0
+divBound _ NegInf = Value $ Val 0
 divBound NegInf (Val y)
   | y > 0 = Value NegInf
   | y < 0 = Value PosInf
@@ -59,12 +59,12 @@ divBound PosInf (Val y)
   | y > 0 = Value PosInf
   | y < 0 = Value NegInf
   | y == 0 = Bottom
-divBound _ _ = error "undefined division"
+divBound _ _ = Bottom
 
 negateBound :: Bound -> BottomM Bound
 negateBound NegInf = Value PosInf
 negateBound PosInf = Value NegInf
-negateBound (Val x) = return $ Val (-x)
+negateBound (Val x) = Value $ Val (-x)
 
 instance Show Bound where
   show NegInf = "-inf"
@@ -78,18 +78,16 @@ isSubsetEqual (Interval a b) (Interval c d) = (a >= c) && (b <= d)
 
 unionInterval :: Interval -> Interval -> IntervalM
 unionInterval (Interval a b) (Interval c d) =
-  let lo = max a c
-      hi = min b d
-   in if lo < hi
-        then return $ Interval lo hi
-        else Bottom
+  let lo = min a c
+      hi = max b d
+   in Value $ Interval lo hi
 
 intersectInterval :: Interval -> Interval -> IntervalM
 intersectInterval (Interval a b) (Interval c d) =
   let lo = max a c
       hi = min b d
-   in if lo < hi
-        then return $ Interval lo hi
+   in if lo <= hi
+        then Value $ Interval lo hi
         else Bottom
 
 -- Abstract operators
@@ -97,13 +95,13 @@ addInterval :: Interval -> Interval -> IntervalM
 addInterval (Interval l1 u1) (Interval l2 u2) = do
   l <- addBound l1 l2
   u <- addBound u1 u2
-  return $ Interval l u
+  Value $ Interval l u
 
 subInterval :: Interval -> Interval -> IntervalM
 subInterval (Interval l1 u1) (Interval l2 u2) = do
   l <- subBound l1 u2
   u <- subBound u1 l2
-  return $ Interval l u
+  Value $ Interval l u
 
 mulInterval :: Interval -> Interval -> IntervalM
 mulInterval (Interval l1 u1) (Interval l2 u2) = do
@@ -111,18 +109,18 @@ mulInterval (Interval l1 u1) (Interval l2 u2) = do
   p2 <- mulBound l1 u2
   p3 <- mulBound u1 l2
   p4 <- mulBound u1 u2
-  return $ Interval (minimum [p1, p2, p3, p4]) (maximum [p1, p2, p3, p4])
+  Value $ Interval (minimum [p1, p2, p3, p4]) (maximum [p1, p2, p3, p4])
 
 divInterval :: Interval -> Interval -> IntervalM
 divInterval (Interval a b) (Interval c d)
   | c >= Val 1 = do
       l <- divBound a c
       u <- divBound b d
-      return $ Interval (min l u) (max l u)
+      Value $ Interval (min l u) (max l u)
   | d <= Val (-1) = do
       l <- divBound b c
       u <- divBound a d
-      return $ Interval (min l u) (max l u)
+      Value $ Interval (min l u) (max l u)
   | otherwise = do
       let ab = Interval a b
           cd = Interval c d
@@ -136,22 +134,16 @@ negateInterval :: Interval -> IntervalM
 negateInterval (Interval l u) = do
   l' <- negateBound u
   u' <- negateBound l
-  return $ Interval l' u'
+  Value $ Interval l' u'
 
 wideningInterval :: Interval -> Interval -> IntervalM
 wideningInterval (Interval l1 u1) (Interval l2 u2) =
-  let l
-        | l1 < l2 = NegInf
-        | l1 > l2 = PosInf
-        | otherwise = l1
-      u
-        | u1 < u2 = NegInf
-        | u1 > u2 = PosInf
-        | otherwise = u1
-   in return $ Interval l u
+  let l = if l2 < l1 then NegInf else l1
+      u = if u2 > u1 then PosInf else u1
+   in Value $ Interval l u
 
 bitWiseInterval :: Interval -> Interval -> IntervalM
-bitWiseInterval _ _ = return $ Interval NegInf PosInf
+bitWiseInterval _ _ = Value $ Interval NegInf PosInf
 
 -- Comparison operators
 equalInterval :: Interval -> Interval -> (IntervalM, IntervalM)
@@ -162,12 +154,16 @@ equalInterval i1 i2 =
 
 lessThanInterval :: Interval -> Interval -> (IntervalM, IntervalM)
 lessThanInterval (Interval a b) (Interval c d) =
-  case (addBound a (Val 1), subBound d (Val 1)) of
-    (Value a', Value d') ->
-      let first = intersectInterval (Interval a b) (Interval NegInf d')
-          second = intersectInterval (Interval a' PosInf) (Interval c d)
-       in (first, second)
-    (_, _) -> (Bottom, Bottom)
+  let i1 = intersectInterval (Interval a b) (Interval NegInf (subVal d 1))
+      i2 = intersectInterval (Interval c d) (Interval (addVal a 1) PosInf)
+   in (i1, i2)
+ where
+  subVal (Val x) y = Val (x - y)
+  subVal PosInf _ = PosInf
+  subVal NegInf _ = NegInf
+  addVal (Val x) y = Val (x + y)
+  addVal PosInf _ = PosInf
+  addVal NegInf _ = NegInf
 
 lessThanEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
 lessThanEqualInterval (Interval a b) (Interval c d) =
@@ -176,16 +172,11 @@ lessThanEqualInterval (Interval a b) (Interval c d) =
    in (first, second)
 
 notEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
-notEqualInterval (Interval a b) (Interval c d) =
+notEqualInterval i1@(Interval a b) i2@(Interval c d) =
   let overlap = max a c <= min b d
-   in ( if overlap
-          then
-            let i1 = Interval a b
-                i2 = Interval c d
-             in (subInterval i1 i2, subInterval i2 i1)
-          else
-            (Value $ Interval a b, Value $ Interval c d)
-      )
+   in if overlap
+        then (subInterval i1 i2, subInterval i2 i1)
+        else (Value i1, Value i2)
 
 instance Show Interval where
   show (Interval lo hi) = "[" ++ show lo ++ ", " ++ show hi ++ "]"
@@ -211,6 +202,9 @@ instance Applicative BottomM where
 instance Monad BottomM where
   Bottom >>= _ = Bottom
   Value x >>= f = f x
+
+instance Fail.MonadFail BottomM where
+  fail _ = Bottom
 
 type IntervalM = BottomM Interval
 
@@ -292,7 +286,7 @@ memSize :: Int
 memSize = 512
 
 topIntervalM :: IntervalM
-topIntervalM = return $ Interval NegInf PosInf
+topIntervalM = Value $ Interval NegInf PosInf
 
 -- Create the initial state with 512 memory cells all set to top
 initState :: State
@@ -301,8 +295,7 @@ initState =
     { registers =
         array
           (0, numRegs - 1)
-          [ (i, topIntervalM) | i <- [0 .. numRegs - 1]
-          ]
+          [(i, topIntervalM) | i <- [0 .. numRegs - 1]]
     , memory =
         array
           (0, memSize - 1)
