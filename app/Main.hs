@@ -2,42 +2,87 @@
 
 module Main where
 
-import Ebpf.Asm
-import Ebpf.AsmParser
-import Ebpf.Display ()
-import Ebpf_cfg (cfg, cfgToDot, dotPrelude, markNodes)
+import Data.Maybe (mapMaybe)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified System.Environment as Sys
 import Text.Printf
 
-type Mem = [Int]
+import Data.Text.Display
 
-data State = State
-  { registers :: [Reg]
-  , memory :: Mem
-  }
-  deriving (Show, Eq)
+import Ebpf.Asm
+import Ebpf.AsmParser
+import Ebpf.Display ()
 
-data Exp
-  = EReg Reg
-  | EConst Int
-  | EMem Mem Reg
-  | EBinOp BinAlu Exp Exp
+data Trans
+  = NonCF Instruction -- no jumps, or exit
+  | Unconditional
+  | Assert Jcmp Reg RegImm
+  deriving (Show, Eq, Ord)
 
-data ConditionalExpression
-  = Equal Exp Exp
-  | NotEqual Exp Exp
-  | LessThan Exp Exp
-  | LessThanEqual Exp Exp
+type Label = Int
+type LabeledProgram = [(Int, Instruction)]
+type CFG = Set (Label, Trans, Label)
 
-type Label = String
+label :: Program -> LabeledProgram
+label = zip [0 ..]
 
-data Statement
-  = AssignReg Reg Exp
-  | AssignMem Mem Reg Reg
-  | If ConditionalExpression Label
-  | Goto Label
+r0 :: Reg
+r0 = Reg 0
 
-type LabelledStatement = (Label, Statement)
+neg :: Jcmp -> Jcmp
+neg cmp =
+  case cmp of
+    Jeq -> Jne
+    Jne -> Jeq
+    Jgt -> Jle
+    Jge -> Jlt
+    Jlt -> Jge
+    Jle -> Jgt
+    Jsgt -> Jsle
+    Jsge -> Jslt
+    Jslt -> Jsge
+    Jsle -> Jsgt
+    Jset -> error "Don't know how to negate JSET"
+
+cfg :: Program -> CFG
+cfg prog = Set.unions $ map transfer $ label prog
+ where
+  transfer (i, instr) =
+    case instr of
+      JCond cmp r ir off ->
+        Set.singleton (i, Assert cmp r ir, i + 1 + fromIntegral off)
+          `Set.union` Set.singleton (i, Assert (neg cmp) r ir, i + 1)
+      Jmp off ->
+        Set.singleton (i, Unconditional, i + 1 + fromIntegral off)
+      Exit ->
+        Set.empty
+      _ ->
+        Set.singleton (i, NonCF instr, i + 1)
+
+------------------- The following is just for visualisation ------------------------
+
+cfgToDot :: CFG -> String
+cfgToDot graph = Set.toList graph >>= showTrans
+ where
+  showTrans (x, NonCF i, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (display i)
+  showTrans (x, Unconditional, y) = printf "  %d -> %d [label=\"jmp\"];\n" x y
+  showTrans (x, Assert c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
+  showJump c r ir = display c <> " " <> display r <> ", " <> display ir
+
+dotPrelude :: String
+dotPrelude =
+  "digraph cfg { \n"
+    ++ "node [fontname=\"monospace\"];\n"
+    ++ "node [shape=box];\n"
+    ++ "edge [fontname=\"monospace\"];\n"
+
+markNodes :: Program -> String
+markNodes prog = concat $ mapMaybe mark $ label prog
+ where
+  mark (lab, Exit) = return $ printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab
+  mark (lab, JCond _ _ _ _) = return $ printf "%d [shape=diamond];\n" lab
+  mark _ = Nothing
 
 main :: IO ()
 main = do

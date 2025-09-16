@@ -5,7 +5,6 @@ module Definitions where
 import Data.Array as Array
 import Data.Map as Map
 import Data.Set (Set)
-import Ebpf.Asm
 import Ebpf_cfg (Label)
 
 data Bound = NegInf | Val Integer | PosInf deriving (Eq, Ord)
@@ -112,22 +111,24 @@ mulInterval (Interval l1 u1) (Interval l2 u2) = do
   Value $ Interval (minimum [p1, p2, p3, p4]) (maximum [p1, p2, p3, p4])
 
 divInterval :: Interval -> Interval -> IntervalM
-divInterval (Interval a b) (Interval c d)
-  | c >= Val 1 = do
-      l <- divBound a c
-      u <- divBound b d
-      Value $ Interval (min l u) (max l u)
+divInterval i1@(Interval a b) i2@(Interval c d)
+  | Val 1 <= c = do
+      l1 <- divBound a c
+      u1 <- divBound a d
+      l2 <- divBound b c
+      u2 <- divBound b d
+      Value $ Interval (min l1 u1) (max l2 u2)
   | d <= Val (-1) = do
-      l <- divBound b c
-      u <- divBound a d
-      Value $ Interval (min l u) (max l u)
+      l1 <- divBound b c
+      u1 <- divBound b d
+      l2 <- divBound a c
+      u2 <- divBound a d
+      Value $ Interval (min l1 u1) (max l2 u2)
   | otherwise = do
-      let ab = Interval a b
-          cd = Interval c d
-      t1 <- intersectInterval cd (Interval (Val 1) PosInf)
-      t2 <- intersectInterval cd (Interval NegInf (Val (-1)))
-      first <- divInterval ab t1
-      second <- divInterval ab t2
+      t1 <- intersectInterval i2 (Interval (Val 1) PosInf)
+      t2 <- intersectInterval i2 (Interval NegInf (Val (-1)))
+      first <- divInterval i1 t1
+      second <- divInterval i1 t2
       unionInterval first second
 
 negateInterval :: Interval -> IntervalM
@@ -202,9 +203,6 @@ instance Applicative BottomM where
 instance Monad BottomM where
   Bottom >>= _ = Bottom
   Value x >>= f = f x
-
-instance Fail.MonadFail BottomM where
-  fail _ = Bottom
 
 type IntervalM = BottomM Interval
 
