@@ -19,11 +19,13 @@ addBound (Val x) (Val y) = return $ Val (x + y)
 addBound _ _ = Bottom
 
 subBound :: Bound -> Bound -> BottomM Bound
+subBound (Val x) (Val y) = return $ Val (x - y)
 subBound NegInf (Val _) = Value NegInf
 subBound (Val _) PosInf = Value NegInf
 subBound PosInf (Val _) = Value PosInf
 subBound (Val _) NegInf = Value PosInf
-subBound (Val x) (Val y) = return $ Val (x - y)
+subBound NegInf PosInf = Value NegInf
+subBound PosInf NegInf = Value PosInf
 -- Rest undefined
 subBound _ _ = Bottom
 
@@ -111,24 +113,24 @@ mulInterval (Interval l1 u1) (Interval l2 u2) = do
   Value $ Interval (minimum [p1, p2, p3, p4]) (maximum [p1, p2, p3, p4])
 
 divInterval :: Interval -> Interval -> IntervalM
-divInterval i1@(Interval a b) i2@(Interval c d)
+divInterval ab@(Interval a b) cd@(Interval c d)
   | Val 1 <= c = do
-      l1 <- divBound a c
-      u1 <- divBound a d
-      l2 <- divBound b c
-      u2 <- divBound b d
-      Value $ Interval (min l1 u1) (max l2 u2)
+      ac <- divBound a c
+      ad <- divBound a d
+      bc <- divBound b c
+      bd <- divBound b d
+      Value $ Interval (min ac ad) (max bc bd)
   | d <= Val (-1) = do
-      l1 <- divBound b c
-      u1 <- divBound b d
-      l2 <- divBound a c
-      u2 <- divBound a d
-      Value $ Interval (min l1 u1) (max l2 u2)
+      bc <- divBound b c
+      bd <- divBound b d
+      ac <- divBound a c
+      ad <- divBound a d
+      Value $ Interval (min bc bd) (max ac ad)
   | otherwise = do
-      t1 <- intersectInterval i2 (Interval (Val 1) PosInf)
-      t2 <- intersectInterval i2 (Interval NegInf (Val (-1)))
-      first <- divInterval i1 t1
-      second <- divInterval i1 t2
+      t1 <- intersectInterval cd (Interval (Val 1) PosInf)
+      t2 <- intersectInterval cd (Interval NegInf (Val (-1)))
+      first <- divInterval ab t1
+      second <- divInterval ab t2
       unionInterval first second
 
 negateInterval :: Interval -> IntervalM
@@ -157,11 +159,11 @@ lessThanInterval i1@(Interval a _) i2@(Interval _ d) = do
   i1' <- intersectInterval i1 (Interval NegInf (subVal d 1))
   i2' <- intersectInterval (Interval (addVal a 1) PosInf) i2
   return (i1', i2')
- where
-  subVal (Val x) y = Val (x - y)
-  subVal x _ = x
-  addVal (Val x) y = Val (x + y)
-  addVal x _ = x
+  where
+    subVal (Val x) y = Val (x - y)
+    subVal x _ = x
+    addVal (Val x) y = Val (x + y)
+    addVal x _ = x
 
 lessThanEqualInterval :: Interval -> Interval -> BottomM (Interval, Interval)
 lessThanEqualInterval i1@(Interval a _) i2@(Interval _ d) = do
@@ -297,9 +299,9 @@ instance Num IntervalM where
 type Mem = Array Int IntervalM
 
 data State = State
-  { registers :: Array Int IntervalM
-  , memory :: Mem
-  , dependencies :: Map.Map Label (Set Label)
+  { registers :: Array Int IntervalM,
+    memory :: Mem,
+    dependencies :: Map.Map Label (Set Label)
   }
   deriving (Eq)
 
@@ -328,12 +330,12 @@ initState =
     { registers =
         array
           (0, numRegs - 1)
-          [(i, topIntervalM) | i <- [0 .. numRegs - 1]]
-    , memory =
+          [(i, topIntervalM) | i <- [0 .. numRegs - 1]],
+      memory =
         array
           (0, memSize - 1)
           [ (i, topIntervalM)
-          | i <- [0 .. memSize - 1]
-          ]
-    , dependencies = empty
+            | i <- [0 .. memSize - 1]
+          ],
+      dependencies = empty
     }

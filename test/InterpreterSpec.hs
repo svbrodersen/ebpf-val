@@ -13,22 +13,22 @@ spec = do
     describe "handleBinary" $ do
       let s = initState
       it "handles Add" $ do
-        let s' = s{registers = registers s // [(1, 5), (2, 10)]}
+        let s' = s{registers = registers s // [(1, fromInteger 5), (2, fromInteger 10)]}
         let result = handleBinary s' (Add, Reg 1, R (Reg 2))
-        registers result ! 1 `shouldBe` 15
+        registers result ! 1 `shouldBe` fromInteger 15
       it "handles Sub" $ do
-        let s' = s{registers = registers s // [(1, 10), (2, 5)]}
+        let s' = s{registers = registers s // [(1, fromInteger 10), (2, fromInteger 5)]}
         let result = handleBinary s' (Sub, Reg 1, R (Reg 2))
-        registers result ! 1 `shouldBe` 5
+        registers result ! 1 `shouldBe` fromInteger 5
       it "handles Mov" $ do
-        let s' = s{registers = registers s // [(1, 10), (2, 5)]}
+        let s' = s{registers = registers s // [(1, fromInteger 10), (2, fromInteger 5)]}
         let result = handleBinary s' (Mov, Reg 1, R (Reg 2))
-        registers result ! 1 `shouldBe` 5
+        registers result ! 1 `shouldBe` fromInteger 5
 
     describe "handleUnary" $ do
       let s = initState
       it "handles Neg" $ do
-        let s' = s{registers = registers s // [(1, 5)]}
+        let s' = s{registers = registers s // [(1, fromInteger 5)]}
         let result = handleUnary s' (Neg, Reg 1)
         registers result ! 1 `shouldBe` fromInteger (-5)
 

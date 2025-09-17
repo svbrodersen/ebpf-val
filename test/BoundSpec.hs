@@ -84,8 +84,7 @@ spec = do
         subInterval i3 i5 `shouldBe` Value (Interval (Val (-3)) (Val 15))
         subInterval i_neg_inf i1 `shouldBe` Value (Interval NegInf (Val 3))
         subInterval i_pos_inf i1 `shouldBe` Value (Interval (Val (-5)) PosInf)
-        -- This is undefined
-        subInterval i_neg_inf i_pos_inf `shouldBe` Bottom
+        subInterval i_neg_inf i_pos_inf `shouldBe` Value (Interval NegInf (Val 0))
 
       it "multiplies intervals correctly" $ do
         mulInterval i1 i2 `shouldBe` Value (Interval (Val 10) (Val 150))
@@ -110,12 +109,12 @@ spec = do
         -- Divisor is [-inf, -1]
         divInterval (Interval (Val 10) (Val 20)) (Interval NegInf (Val (-1))) `shouldBe` Value (Interval (Val (-20)) (Val 0))
         -- Divisor contains 0 and spans positive and negative
-        divInterval i1 i3 `shouldBe` Value (Interval (Val (-10)) (Val 10))
-        divInterval (Interval (Val 10) (Val 20)) (Interval (Val (-2)) (Val 2)) `shouldBe` Value (Interval (Val (-20)) (Val 20))
+        divInterval i1 i3 `shouldBe` Value (Interval NegInf PosInf)
+        divInterval (Interval (Val 10) (Val 20)) (Interval (Val (-2)) (Val 2)) `shouldBe` Value (Interval NegInf PosInf)
 
-      it "divides intervals when divisor contains 0 - Bottom" $ do
-        divInterval (Interval (Val 10) (Val 20)) (Interval (Val 0) (Val 5)) `shouldBe` Bottom
-        divInterval (Interval (Val 10) (Val 20)) (Interval (Val (-5)) (Val 0)) `shouldBe` Bottom
+      it "divides intervals when divisor contains 0" $ do
+        divInterval (Interval (Val 10) (Val 20)) (Interval (Val 0) (Val 5)) `shouldBe` Value (Interval (Val 2) PosInf)
+        divInterval (Interval (Val 10) (Val 20)) (Interval (Val (-5)) (Val 0)) `shouldBe` Value (Interval NegInf (Val (-2)))
 
       it "negates intervals correctly" $ do
         negateInterval i1 `shouldBe` Value (Interval (Val (-10)) (Val (-2)))
@@ -126,18 +125,18 @@ spec = do
 
       it "widens intervals correctly" $ do
         wideningInterval i1 i2 `shouldBe` Value (Interval (Val 2) PosInf)
-        wideningInterval i2 i1 `shouldBe` Value (Interval NegInf (Val 15))
+        wideningInterval i2 i1 `shouldBe` Value (Interval (Val 2) (Val 15))
         wideningInterval i1 (Interval (Val 1) (Val 10)) `shouldBe` Value (Interval NegInf (Val 10))
         wideningInterval i1 (Interval (Val 1) (Val 11)) `shouldBe` Value (Interval NegInf PosInf)
 
       it "handles less than correctly" $ do
-        lessThanInterval i1 i2 `shouldBe` (Value (Interval (Val 2) (Val 10)), Value (Interval (Val 5) (Val 15)))
-        lessThanInterval i2 i1 `shouldBe` (Value (Interval (Val 5) (Val 9)), Value (Interval (Val 6) (Val 10)))
-        lessThanInterval i1 (Interval (Val 11) (Val 12)) `shouldBe` (Value (Interval (Val 2) (Val 10)), Value (Interval (Val 11) (Val 12)))
-        lessThanInterval (Interval (Val 11) (Val 12)) i1 `shouldBe` (Bottom, Bottom)
+        lessThanInterval i1 i2 `shouldBe` Value (Interval (Val 2) (Val 10), Interval (Val 5) (Val 15))
+        lessThanInterval i2 i1 `shouldBe` Value (Interval (Val 5) (Val 9), Interval (Val 6) (Val 10))
+        lessThanInterval i1 (Interval (Val 11) (Val 12)) `shouldBe` Value (Interval (Val 2) (Val 10), Interval (Val 11) (Val 12))
+        lessThanInterval (Interval (Val 11) (Val 12)) i1 `shouldBe` Bottom
 
       it "handles less than or equal correctly" $ do
-        lessThanEqualInterval i1 i2 `shouldBe` (Value (Interval (Val 2) (Val 10)), Value (Interval (Val 5) (Val 15)))
-        lessThanEqualInterval i2 i1 `shouldBe` (Value (Interval (Val 5) (Val 10)), Value (Interval (Val 5) (Val 10)))
-        lessThanEqualInterval i1 (Interval (Val 10) (Val 12)) `shouldBe` (Value (Interval (Val 2) (Val 10)), Value (Interval (Val 10) (Val 12)))
-        lessThanEqualInterval (Interval (Val 11) (Val 12)) i1 `shouldBe` (Bottom, Bottom)
+        lessThanEqualInterval i1 i2 `shouldBe` Value (Interval (Val 2) (Val 10), Interval (Val 5) (Val 15))
+        lessThanEqualInterval i2 i1 `shouldBe` Value (Interval (Val 5) (Val 10), Interval (Val 5) (Val 10))
+        lessThanEqualInterval i1 (Interval (Val 10) (Val 12)) `shouldBe` Value (Interval (Val 2) (Val 10), Interval (Val 10) (Val 12))
+        lessThanEqualInterval (Interval (Val 11) (Val 12)) i1 `shouldBe` Bottom
