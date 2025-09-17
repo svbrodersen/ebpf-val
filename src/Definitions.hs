@@ -147,37 +147,60 @@ bitWiseInterval :: Interval -> Interval -> IntervalM
 bitWiseInterval _ _ = Value $ Interval NegInf PosInf
 
 -- Comparison operators
-equalInterval :: Interval -> Interval -> (IntervalM, IntervalM)
-equalInterval i1 i2 =
-  let first = intersectInterval i1 i2
-      second = first
-   in (first, second)
+equalInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+equalInterval i1 i2 = do
+  first <- intersectInterval i1 i2
+  return (first, first)
 
-lessThanInterval :: Interval -> Interval -> (IntervalM, IntervalM)
-lessThanInterval (Interval a b) (Interval c d) =
-  let i1 = intersectInterval (Interval a b) (Interval NegInf (subVal d 1))
-      i2 = intersectInterval (Interval c d) (Interval (addVal a 1) PosInf)
-   in (i1, i2)
+lessThanInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+lessThanInterval i1@(Interval a _) i2@(Interval _ d) = do
+  i1' <- intersectInterval i1 (Interval NegInf (subVal d 1))
+  i2' <- intersectInterval (Interval (addVal a 1) PosInf) i2
+  return (i1', i2')
  where
   subVal (Val x) y = Val (x - y)
-  subVal PosInf _ = PosInf
-  subVal NegInf _ = NegInf
+  subVal x _ = x
   addVal (Val x) y = Val (x + y)
-  addVal PosInf _ = PosInf
-  addVal NegInf _ = NegInf
+  addVal x _ = x
 
-lessThanEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
-lessThanEqualInterval (Interval a b) (Interval c d) =
-  let first = intersectInterval (Interval a b) (Interval NegInf d)
-      second = intersectInterval (Interval a PosInf) (Interval c d)
-   in (first, second)
+lessThanEqualInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+lessThanEqualInterval i1@(Interval a _) i2@(Interval _ d) = do
+  i1' <- intersectInterval i1 (Interval NegInf d)
+  i2' <- intersectInterval (Interval a PosInf) i2
+  return (i1', i2')
 
-notEqualInterval :: Interval -> Interval -> (IntervalM, IntervalM)
-notEqualInterval i1@(Interval a b) i2@(Interval c d) =
-  let overlap = max a c <= min b d
-   in if overlap
-        then (subInterval i1 i2, subInterval i2 i1)
-        else (Value i1, Value i2)
+greaterThanInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+greaterThanInterval i1 i2 = do
+  i1' <- negateInterval i1
+  i2' <- negateInterval i2
+  (i1'', i2'') <- lessThanInterval i1' i2'
+  r1 <- negateInterval i1''
+  r2 <- negateInterval i2''
+  return (r1, r2)
+
+greaterThanEqualInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+greaterThanEqualInterval i1 i2 = do
+  i1' <- negateInterval i1
+  i2' <- negateInterval i2
+  (i1'', i2'') <- lessThanEqualInterval i1' i2'
+  r1 <- negateInterval i1''
+  r2 <- negateInterval i2''
+  return (r1, r2)
+
+notEqualInterval :: Interval -> Interval -> BottomM (Interval, Interval)
+notEqualInterval i1@(Interval a b) i2@(Interval c d)
+  -- They are exactly the same, so both bottom
+  | a == c || b == d = Bottom
+  | otherwise = do
+      let intersect = intersectInterval i1 i2
+       in case intersect of
+            -- No intersection so they stay the same
+            Bottom -> Value (i1, i2)
+            -- Intersection, so we remove the intersection elements from each.
+            Value int -> do
+              t1 <- subInterval i1 int
+              t2 <- subInterval i2 int
+              return (t1, t2)
 
 instance Show Interval where
   show (Interval lo hi) = "[" ++ show lo ++ ", " ++ show hi ++ "]"
@@ -206,7 +229,7 @@ instance Monad BottomM where
 
 type IntervalM = BottomM Interval
 
-wrapFunc :: (Interval -> Interval -> IntervalM) -> IntervalM -> IntervalM -> IntervalM
+wrapFunc :: (Interval -> Interval -> BottomM a) -> IntervalM -> IntervalM -> BottomM a
 wrapFunc f m1 m2 = do
   i1 <- m1
   i2 <- m2
@@ -241,6 +264,18 @@ negateIntervalM :: IntervalM -> IntervalM
 negateIntervalM m1 = do
   i <- m1
   negateInterval i
+
+lessThanEqualIntervalM :: IntervalM -> IntervalM -> BottomM (Interval, Interval)
+lessThanEqualIntervalM = wrapFunc lessThanEqualInterval
+
+lessThanIntervalM :: IntervalM -> IntervalM -> BottomM (Interval, Interval)
+lessThanIntervalM = wrapFunc lessThanInterval
+
+greaterThanIntervalM :: IntervalM -> IntervalM -> BottomM (Interval, Interval)
+greaterThanIntervalM = wrapFunc greaterThanInterval
+
+greaterThanEqualIntervalM :: IntervalM -> IntervalM -> BottomM (Interval, Interval)
+greaterThanEqualIntervalM = wrapFunc greaterThanEqualInterval
 
 wideningIntervalM :: IntervalM -> IntervalM -> IntervalM
 wideningIntervalM i Bottom = i

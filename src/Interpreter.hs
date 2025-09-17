@@ -94,35 +94,37 @@ handleNonCF state inst =
          in Just (fromInteger lo', fromInteger hi')
   getBounds Bottom = Nothing
 
-handleCfg :: State -> (Label, Trans, Label) -> CFG -> Either String State
-handleCfg state (l1, NonCF inst, l2) _ =
-  -- Insert l1 as a dependency of l2
-  let newState = state{dependencies = Map.insertWith Set.union l2 (Set.singleton l1) (dependencies state)}
-   in handleNonCF newState inst
-handleCfg state (l1, Unconditional, l2) graph =
-  case filtered of
-    [(l2', trans, l3)] ->
-      let newState' =
-            state
-              { dependencies =
-                  Map.insertWith
-                    Set.union
-                    l2
-                    (Set.singleton l1)
-                    (dependencies state)
-              }
-          newState =
-            newState'
-              { dependencies =
-                  Map.insertWith
-                    Set.union
-                    l3
-                    (Set.singleton l2)
-                    (dependencies newState')
-              }
-       in handleCfg newState (l2', trans, l3) graph
-    _ : _ -> Left $ "Found multiple labels: " ++ show l2 ++ "\n"
-    _ -> Left $ "Found no label: " ++ show l2 ++ "\n"
- where
-  filtered = Set.toList $ Set.filter (\(from, _, _) -> from == l2) graph
-handleCfg state (_, Assert jmp (Reg lhs) regimm, _) _ = Left "Asserts not implemented yet"
+handleTrans :: State -> Trans -> Either String State
+handleTrans state (NonCF inst) = handleNonCF state inst
+-- If we jump, then we don't know anything new
+handleTrans state Unconditional = Right state
+handleTrans state (Assert jmp (Reg lhs) regimm) =
+  let lhs_val = registers state Array.! lhs
+      rhs_val = case regimm of
+        R (Reg r) -> registers state Array.! r
+        Imm i -> fromIntegral i
+      result = do
+        i1 <- lhs_val
+        i2 <- rhs_val
+        let val =
+              case jmp of
+                Jeq -> equalInterval i1 i2
+                Jne -> notEqualInterval i1 i2
+                Jlt -> lessThanInterval i1 i2
+                Jle -> lessThanEqualInterval i1 i2
+                -- Swap use of lessthan
+                Jgt -> greaterThanInterval i1 i2
+                Jge -> greaterThanEqualInterval i2 i1
+                _ -> Value (i1, i2) -- For other jumps, we don't refine
+        let (lhs_new, rhs_new) =
+              case val of
+                Bottom -> (Bottom, Bottom)
+                Value (i1', i2') -> (Value i1', Value i2')
+        let new_regs =
+              case regimm of
+                R (Reg r) -> registers state // [(lhs, lhs_new), (r, rhs_new)]
+                Imm _ -> registers state // [(lhs, lhs_new)]
+        return state{registers = new_regs}
+   in case result of
+        Bottom -> Left "Bottom state in Assert"
+        Value s -> Right s
