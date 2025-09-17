@@ -292,6 +292,17 @@ wideningIntervalM i Bottom = i
 wideningIntervalM Bottom i = i
 wideningIntervalM m1 m2 = wrapFunc wideningInterval m1 m2
 
+narrowingInterval :: Interval -> Interval -> IntervalM
+narrowingInterval (Interval l1 u1) (Interval l2 u2) =
+  let l = if l1 == NegInf then l2 else l1
+      u = if u1 == PosInf then u2 else u1
+   in Value $ Interval l u
+
+narrowingIntervalM :: IntervalM -> IntervalM -> IntervalM
+narrowingIntervalM i Bottom = i
+narrowingIntervalM Bottom i = i
+narrowingIntervalM m1 m2 = wrapFunc narrowingInterval m1 m2
+
 bitWiseIntervalM :: IntervalM -> IntervalM -> IntervalM
 bitWiseIntervalM = wrapFunc bitWiseInterval
 
@@ -308,8 +319,7 @@ type Mem = Array Int IntervalM
 
 data State = State
   { registers :: Array Int IntervalM,
-    memory :: Mem,
-    dependencies :: Map.Map Label (Set Label)
+    memory :: Mem
   }
   deriving (Eq)
 
@@ -318,7 +328,6 @@ instance Show State where
     let (lo, hi) = bounds $ memory s
      in "Regs: "
           ++ show (Array.elems $ registers s)
-          ++ "\n"
           ++ "Mem: "
           ++ show (zip [lo .. hi] (Array.elems (memory s)))
 
@@ -344,6 +353,24 @@ initState =
           (0, memSize - 1)
           [ (i, topIntervalM)
             | i <- [0 .. memSize - 1]
-          ],
-      dependencies = empty
+          ]
+    }
+
+unionArray :: Array Int IntervalM -> Array Int IntervalM -> Array Int IntervalM
+unionArray a1 a2 =
+  let (lo, hi) = bounds a1
+   in array (lo, hi) [(i, unionIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
+
+unionState :: State -> State -> State
+unionState s1 s2 =
+  State
+    { registers = unionArray (registers s1) (registers s2),
+      memory = unionArray (memory s1) (memory s2)
+    }
+
+bottomState :: State
+bottomState =
+  State
+    { registers = listArray (0, numRegs - 1) (repeat Bottom),
+      memory = listArray (0, memSize - 1) (repeat Bottom)
     }

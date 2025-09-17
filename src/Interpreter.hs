@@ -43,18 +43,18 @@ handleUnary state (alu, Reg reg) =
           Be -> val
    in state {registers = registers state // [(reg, result)]}
 
-handleNonCF :: State -> Instruction -> Either String State
+handleNonCF :: State -> Instruction -> State
 handleNonCF state inst =
   case inst of
-    Binary _ alu reg regimm -> Right $ handleBinary state (alu, reg, regimm)
-    Unary _ alu reg -> Right $ handleUnary state (alu, reg)
+    Binary _ alu reg regimm -> handleBinary state (alu, reg, regimm)
+    Unary _ alu reg -> handleUnary state (alu, reg)
     Store _ (Reg dst) offset regimm ->
-      Right $ storeMemory dst offset regimm
+      storeMemory dst offset regimm
     Load _ (Reg dst) (Reg src) offset ->
-      Right $ loadMemory dst offset (R (Reg src))
+      loadMemory dst offset (R (Reg src))
     LoadImm (Reg dst) imm ->
-      Right $ state {registers = registers state // [(dst, fromIntegral imm)]}
-    x -> Left $ "Unsupported instruction: " ++ show x
+      state {registers = registers state // [(dst, fromIntegral imm)]}
+    _ -> state
   where
     loadMemory dst Nothing (R (Reg src)) =
       -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
@@ -94,10 +94,10 @@ handleNonCF state inst =
            in Just (fromInteger lo', fromInteger hi')
     getBounds Bottom = Nothing
 
-handleTrans :: State -> Trans -> Either String State
+handleTrans :: State -> Trans -> State
 handleTrans state (NonCF inst) = handleNonCF state inst
 -- If we jump, then we don't know anything new
-handleTrans state Unconditional = Right state
+handleTrans state Unconditional = state
 handleTrans state (Assert jmp (Reg lhs) regimm) =
   let lhs_val = registers state Array.! lhs
       rhs_val = case regimm of
@@ -126,11 +126,5 @@ handleTrans state (Assert jmp (Reg lhs) regimm) =
                 Imm _ -> registers state // [(lhs, lhs_new)]
         return state {registers = new_regs}
    in case result of
-        Bottom -> Left "Bottom state in Assert"
-        Value s -> Right s
-
-handleInstruction :: State -> (Label, Trans, Label) -> Either String State
-handleInstruction st (x, t, y) =
-  let newDep = Map.insertWith Set.union y (Set.singleton x) (dependencies st)
-      newState = st {dependencies = newDep}
-   in handleTrans newState t
+        Bottom -> state
+        Value s -> s
