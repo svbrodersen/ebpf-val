@@ -30,7 +30,7 @@ handleBinary state (alu, Reg dst, regimm) =
           Mod -> bitWiseIntervalM dst_val rhs
           Xor -> bitWiseIntervalM dst_val rhs
           Arsh -> bitWiseIntervalM dst_val rhs
-   in state{registers = registers state // [(dst, result)]}
+   in state {registers = registers state // [(dst, result)]}
 
 handleUnary :: State -> (UnAlu, Reg) -> State
 handleUnary state (alu, Reg reg) =
@@ -41,7 +41,7 @@ handleUnary state (alu, Reg reg) =
           -- Endianness conversions are no-ops for the value analysis
           Le -> val
           Be -> val
-   in state{registers = registers state // [(reg, result)]}
+   in state {registers = registers state // [(reg, result)]}
 
 handleNonCF :: State -> Instruction -> Either String State
 handleNonCF state inst =
@@ -53,46 +53,46 @@ handleNonCF state inst =
     Load _ (Reg dst) (Reg src) offset ->
       Right $ loadMemory dst offset (R (Reg src))
     LoadImm (Reg dst) imm ->
-      Right $ state{registers = registers state // [(dst, fromIntegral imm)]}
+      Right $ state {registers = registers state // [(dst, fromIntegral imm)]}
     x -> Left $ "Unsupported instruction: " ++ show x
- where
-  loadMemory dst Nothing (R (Reg src)) =
-    -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
-    let intv = registers state Array.! src
-     in case getBounds intv of
-          Nothing -> state
-          Just (lo', hi') ->
-            let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
-             in state{registers = registers state // [(dst, newInt)]}
-  loadMemory dst Nothing (Imm src) =
-    -- If we have a memory, then we just load the interval of the memory and set the register
-    let newInt = memory state Array.! fromIntegral src
-     in state{registers = registers state // [(dst, newInt)]}
-  loadMemory dst (Just off) (R (Reg src)) =
-    let intv = registers state Array.! src
-     in case getBounds (intv - fromIntegral off) of
-          Nothing -> state
-          Just (lo', hi') ->
-            let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
-             in state{registers = registers state // [(dst, newInt)]}
-  loadMemory dst (Just off) (Imm src) =
-    let newInt = memory state Array.! (fromIntegral src - fromIntegral off)
-     in state{registers = registers state // [(dst, newInt)]}
-  storeMemory _ _ _ = state -- For now, we don't model stores
-  getBounds (Value (Interval lo hi)) =
-    -- Make sure we have some memory we can index
-    if lo == PosInf || hi == NegInf
-      then
-        Nothing
-      else
-        let lo' = case max lo (Val 0) of
-              Val x' -> x'
-              _ -> 0
-            hi' = case min hi (Val 511) of
-              Val x' -> x'
-              _ -> 511
-         in Just (fromInteger lo', fromInteger hi')
-  getBounds Bottom = Nothing
+  where
+    loadMemory dst Nothing (R (Reg src)) =
+      -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
+      let intv = registers state Array.! src
+       in case getBounds intv of
+            Nothing -> state
+            Just (lo', hi') ->
+              let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
+               in state {registers = registers state // [(dst, newInt)]}
+    loadMemory dst Nothing (Imm src) =
+      -- If we have a memory, then we just load the interval of the memory and set the register
+      let newInt = memory state Array.! fromIntegral src
+       in state {registers = registers state // [(dst, newInt)]}
+    loadMemory dst (Just off) (R (Reg src)) =
+      let intv = registers state Array.! src
+       in case getBounds (intv - fromIntegral off) of
+            Nothing -> state
+            Just (lo', hi') ->
+              let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
+               in state {registers = registers state // [(dst, newInt)]}
+    loadMemory dst (Just off) (Imm src) =
+      let newInt = memory state Array.! (fromIntegral src - fromIntegral off)
+       in state {registers = registers state // [(dst, newInt)]}
+    storeMemory _ _ _ = state -- For now, we don't model stores
+    getBounds (Value (Interval lo hi)) =
+      -- Make sure we have some memory we can index
+      if lo == PosInf || hi == NegInf
+        then
+          Nothing
+        else
+          let lo' = case max lo (Val 0) of
+                Val x' -> x'
+                _ -> 0
+              hi' = case min hi (Val 511) of
+                Val x' -> x'
+                _ -> 511
+           in Just (fromInteger lo', fromInteger hi')
+    getBounds Bottom = Nothing
 
 handleTrans :: State -> Trans -> Either String State
 handleTrans state (NonCF inst) = handleNonCF state inst
@@ -114,7 +114,7 @@ handleTrans state (Assert jmp (Reg lhs) regimm) =
                 Jle -> lessThanEqualInterval i1 i2
                 -- Swap use of lessthan
                 Jgt -> greaterThanInterval i1 i2
-                Jge -> greaterThanEqualInterval i2 i1
+                Jge -> greaterThanEqualInterval i1 i2
                 _ -> Value (i1, i2) -- For other jumps, we don't refine
         let (lhs_new, rhs_new) =
               case val of
@@ -124,7 +124,13 @@ handleTrans state (Assert jmp (Reg lhs) regimm) =
               case regimm of
                 R (Reg r) -> registers state // [(lhs, lhs_new), (r, rhs_new)]
                 Imm _ -> registers state // [(lhs, lhs_new)]
-        return state{registers = new_regs}
+        return state {registers = new_regs}
    in case result of
         Bottom -> Left "Bottom state in Assert"
         Value s -> Right s
+
+handleInstruction :: State -> (Label, Trans, Label) -> Either String State
+handleInstruction st (x, t, y) =
+  let newDep = Map.insertWith Set.union y (Set.singleton x) (dependencies st)
+      newState = st {dependencies = newDep}
+   in handleTrans newState t

@@ -126,12 +126,14 @@ divInterval ab@(Interval a b) cd@(Interval c d)
       ac <- divBound a c
       ad <- divBound a d
       Value $ Interval (min bc bd) (max ac ad)
-  | otherwise = do
-      t1 <- intersectInterval cd (Interval (Val 1) PosInf)
-      t2 <- intersectInterval cd (Interval NegInf (Val (-1)))
-      first <- divInterval ab t1
-      second <- divInterval ab t2
-      unionInterval first second
+  | otherwise =
+      let first = do
+            t1 <- intersectInterval cd (Interval (Val 1) PosInf)
+            divInterval ab t1
+          second = do
+            t2 <- intersectInterval cd (Interval NegInf (Val (-1)))
+            divInterval ab t2
+       in unionIntervalM first second
 
 negateInterval :: Interval -> IntervalM
 negateInterval (Interval l u) = do
@@ -243,8 +245,14 @@ isSubsetEqualM Bottom _ = True
 isSubsetEqualM _ Bottom = False
 isSubsetEqualM (Value i1) (Value i2) = isSubsetEqual i1 i2
 
+-- Union is the one case, where if we have bottom, then we can still do more computation on it.
 unionIntervalM :: IntervalM -> IntervalM -> IntervalM
-unionIntervalM = wrapFunc unionInterval
+unionIntervalM m1 m2 =
+  case (m1, m2) of
+    (Bottom, Value i2) -> Value i2
+    (Value i1, Bottom) -> Value i1
+    (Value i1, Value i2) -> unionInterval i1 i2
+    (_, _) -> Bottom
 
 intersectIntervalM :: IntervalM -> IntervalM -> IntervalM
 intersectIntervalM = wrapFunc intersectInterval
