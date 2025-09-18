@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Main where
 
 import Data.Array as Array
@@ -48,32 +50,23 @@ unionState s1 s2 =
       let (lo, hi) = bounds a1
        in array (lo, hi) [(i, unionIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
 
-workSetAlgorithm :: CFG -> Map Label Trans -> Map Label [Label] -> Map Label State -> Set Label -> Map Label State
-workSetAlgorithm graph instrMap prevMap states worklist
+workSetAlgorithm :: CFG -> Map Label State -> CFG -> Map Label State
+workSetAlgorithm graph states worklist
   | Set.null worklist = states
   | otherwise =
-      let l = Set.elemAt 0 worklist
-          current_state = trace ("Get State: " ++ show l) $ getCurrentState l
+      let (l, instr, next) = Set.elemAt 0 worklist
+          current_state = states Map.! l
           w' = Set.deleteAt 0 worklist
-          successors = [dst | (src, _, dst) <- Set.toList graph, src == l]
-          newState =
-            case getInstr l of
-              Just instr -> handleTrans current_state instr
-              Nothing -> trace ("Got nothing for: " ++ show l) current_state
+          newState = handleTrans current_state instr
+          newStates = trace ("Label: " ++ show l ++ "\nnewState: " ++ show (registers newState)) $ Map.insertWith unionState next newState states
+          successors = getSuccessors next
        in if current_state == newState
             -- We don't add anything else
-            then workSetAlgorithm graph instrMap prevMap states w'
+            then workSetAlgorithm graph newStates w'
             -- Here we add all the elements that depend on us
-            else
-              let newStates = getNewState successors newState
-               in workSetAlgorithm graph instrMap prevMap newStates (Set.union w' (Set.fromList successors))
+            else workSetAlgorithm graph newStates (Set.union w' successors)
   where
-    -- TODO: Issue is that if we want to update the next state, then we should overwrite the state, unless there are multiple ways to get there.
-    -- Have to change to instead look for the predecesor instead of trying to update the successor. Then also have to update the current label in the states, whenever we have finished an instruction.
-    getNewState successors st' = foldl (\state n -> Map.insertWith unionState n st' state) states successors
-    getCurrentState l' = states Map.! l'
-    getInstr l =
-      Map.lookup l instrMap
+    getSuccessors n' = Set.filter (\(l', _, _) -> l' == n') graph
 
 allLabels :: CFG -> Set Label
 allLabels graph =
@@ -105,15 +98,11 @@ main =
                 printf "The eBPF file %s has %d instructions\n" ebpfFile (length prog)
                 let graph = cfg prog
                     labels = allLabels graph
-                    initial_states = Map.fromList [(l, initState) | l <- Set.toList labels]
-                    instrMap = buildInstrMap graph
-                    prevMap = predMap graph
-                    final_states = workSetAlgorithm graph instrMap prevMap initial_states labels
-                    output = printf ("States: " ++ show (Map.toList final_states))
+                    initial_states = Map.fromList [if l == 0 then (l, initState) else (l, bottomState) | l <- Set.toList labels]
+                    final_states = workSetAlgorithm graph initial_states graph
+                    (_, exit) = Map.findMax final_states
+                    output = printf (show exit)
                 writeFile outFile output
                 printf "Wrote analysis results to %s\n" outFile
       _ ->
         putStrLn "Usage <EBPF_FILE> <OUT_FILE>"
-  where
-    buildInstrMap graph =
-      Map.fromList [(src, instr) | (src, instr, _) <- Set.toList graph]
