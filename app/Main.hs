@@ -3,7 +3,6 @@ module Main where
 import Data.Array as Array
 import Data.Map.Strict as Map hiding (foldl)
 import Data.Set as Set hiding (foldl)
-import Debug.Trace
 import Definitions hiding (unionArray, unionState)
 import Ebpf.AsmParser
 import Ebpf.Display ()
@@ -61,10 +60,10 @@ workSetAlgorithm graph states worklist counters
       let (l, instr, n) = Set.elemAt 0 worklist
           w' = Set.deleteAt 0 worklist
           current_state = getPreviousState l
-          evalState = trace ("Got curr_state: " ++ show (registers current_state)) $ handleTrans current_state instr
+          evalState = handleTrans current_state instr
           oldState = states Map.! n
           newState = unionState evalState oldState
-          newStates = trace ("Label: " ++ show n ++ "\nnewState: " ++ show (registers newState)) $ Map.insert n newState states
+          newStates = Map.insert n newState states
           successors = getSuccessors n
        in if oldState == newState
             -- We don't add anything else
@@ -128,8 +127,10 @@ main =
                     initial_counters = Map.fromList [(l, 0) | l <- labels]
                     final_states = workSetAlgorithm graph initial_states graph initial_counters
                     (_, exit) = Map.findMax final_states
-                    output = printf (show exit)
+                    output = printf (printState exit)
                 writeFile outFile output
                 printf "Wrote analysis results to %s\n" outFile
       _ ->
         putStrLn "Usage <EBPF_FILE> <OUT_FILE>"
+ where
+  printState st = "Registers: " ++ show (registers st) ++ "\n\nMemory: " ++ show (memory st) ++ "\n"

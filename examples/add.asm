@@ -3,4 +3,3 @@ mov r1, 21
 jeq r0, 0, +1
   add r0, r1
 exit
-;; r0 == 42

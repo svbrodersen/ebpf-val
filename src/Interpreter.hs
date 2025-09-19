@@ -1,10 +1,13 @@
 module Interpreter where
 
 import Data.Array as Array
+import Data.Int (Int64)
 import Data.Map as Map
 import Data.Set as Set
+import Debug.Trace
 import Definitions
 import Ebpf.Asm as Asm
+import Ebpf.AsmParser (SpliceConstructors (rRegImm))
 import Ebpf_cfg
 import Prelude
 
@@ -30,7 +33,7 @@ handleBinary state (alu, Reg dst, regimm) =
           Mod -> bitWiseIntervalM dst_val rhs
           Xor -> bitWiseIntervalM dst_val rhs
           Arsh -> bitWiseIntervalM dst_val rhs
-   in state {registers = registers state // [(dst, result)]}
+   in state{registers = registers state // [(dst, result)]}
 
 handleUnary :: State -> (UnAlu, Reg) -> State
 handleUnary state (alu, Reg reg) =
@@ -41,7 +44,7 @@ handleUnary state (alu, Reg reg) =
           -- Endianness conversions are no-ops for the value analysis
           Le -> val
           Be -> val
-   in state {registers = registers state // [(reg, result)]}
+   in state{registers = registers state // [(reg, result)]}
 
 handleNonCF :: State -> Instruction -> State
 handleNonCF state inst =
@@ -53,46 +56,69 @@ handleNonCF state inst =
     Load _ (Reg dst) (Reg src) offset ->
       loadMemory dst offset (R (Reg src))
     LoadImm (Reg dst) imm ->
-      state {registers = registers state // [(dst, fromIntegral imm)]}
+      storeMemory dst Nothing (Imm imm)
     _ -> state
-  where
-    loadMemory dst Nothing (R (Reg src)) =
-      -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
-      let intv = registers state Array.! src
-       in case getBounds intv of
-            Nothing -> state
-            Just (lo', hi') ->
-              let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
-               in state {registers = registers state // [(dst, newInt)]}
-    loadMemory dst Nothing (Imm src) =
-      -- If we have a memory, then we just load the interval of the memory and set the register
-      let newInt = memory state Array.! fromIntegral src
-       in state {registers = registers state // [(dst, newInt)]}
-    loadMemory dst (Just off) (R (Reg src)) =
-      let intv = registers state Array.! src
-       in case getBounds (intv - fromIntegral off) of
-            Nothing -> state
-            Just (lo', hi') ->
-              let newInt = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [lo' .. hi']]
-               in state {registers = registers state // [(dst, newInt)]}
-    loadMemory dst (Just off) (Imm src) =
-      let newInt = memory state Array.! (fromIntegral src - fromIntegral off)
-       in state {registers = registers state // [(dst, newInt)]}
-    storeMemory _ _ _ = state -- For now, we don't model stores
-    getBounds (Value (Interval lo hi)) =
-      -- Make sure we have some memory we can index
-      if lo == PosInf || hi == NegInf
-        then
-          Nothing
-        else
-          let lo' = case max lo (Val 0) of
-                Val x' -> x'
-                _ -> 0
-              hi' = case min hi (Val 511) of
-                Val x' -> x'
-                _ -> 511
-           in Just (fromInteger lo', fromInteger hi')
-    getBounds Bottom = Nothing
+ where
+  loadMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
+  loadMemory dst off (R (Reg src)) =
+    let intv = registers state Array.! src
+     in case getBounds intv of
+          Nothing -> state
+          Just (loSrc, hiSrc) ->
+            -- We calculate the new interval as the union between all possible memory locations
+            let newInterval = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [loSrc .. hiSrc]]
+             in case off of
+                  -- No offset when loading to register??
+                  Nothing -> state{registers = registers state // [(dst, newInterval)]}
+                  Just _ -> state{registers = registers state // [(dst, newInterval)]}
+  loadMemory dst off (Imm imm) =
+    let newInterval = fromInteger $ fromIntegral imm
+     in case off of
+          -- We should not have offset if we are loading into a register
+          Nothing -> state{registers = registers state // [(dst, newInterval)]}
+          Just _ -> state{registers = registers state // [(dst, newInterval)]}
+  storeMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
+  storeMemory dst off (R (Reg src)) =
+    -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
+    let intv = registers state Array.! src
+     in case getBounds intv of
+          Nothing -> state
+          Just (loSrc, hiSrc) ->
+            -- We calculate the new interval as the union between all possible memory locations
+            let newInterval = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [loSrc .. hiSrc]]
+             in case off of
+                  Nothing -> updateMemory dst 0 newInterval
+                  Just off' -> updateMemory dst off' newInterval
+  storeMemory dst off (Imm src) =
+    -- If we have an immediate value, then we update the possible destinations with it
+    let newInt = Value $ Interval (Val $ fromIntegral src) (Val $ fromIntegral src)
+     in case off of
+          Nothing -> updateMemory dst 0 newInt
+          Just off' -> updateMemory dst off' newInt
+  updateMemory :: Int -> MemoryOffset -> IntervalM -> State
+  updateMemory dst off newInterval =
+    let dst' = registers state Array.! dst
+     in case getBounds dst' of
+          Nothing -> state
+          Just (loDst, hiDst) ->
+            let
+              updates = [(fromIntegral i, newInterval) | i <- [(loDst - off) .. (hiDst - off)]]
+             in
+              state{memory = memory state // updates}
+  getBounds (Value (Interval lo hi)) =
+    -- Make sure we have some memory we can index
+    if lo == PosInf || hi == NegInf
+      then
+        Nothing
+      else
+        let lo' = case max lo (Val 0) of
+              Val x' -> x'
+              _ -> 0
+            hi' = case min hi (Val 511) of
+              Val x' -> x'
+              _ -> 511
+         in Just (fromInteger lo', fromInteger hi')
+  getBounds Bottom = Nothing
 
 handleTrans :: State -> Trans -> State
 handleTrans state (NonCF inst) = handleNonCF state inst
@@ -124,7 +150,7 @@ handleTrans state (Assert jmp (Reg lhs) regimm) =
               case regimm of
                 R (Reg r) -> registers state // [(lhs, lhs_new), (r, rhs_new)]
                 Imm _ -> registers state // [(lhs, lhs_new)]
-        return state {registers = new_regs}
+        return state{registers = new_regs}
    in case result of
         Bottom -> state
         Value s -> s
