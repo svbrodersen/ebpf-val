@@ -62,7 +62,7 @@ handleNonCF state inst =
   loadMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
   loadMemory dst off (R (Reg src)) =
     let intv = registers state Array.! src
-     in case getBounds intv of
+     in case getBounds intv (Just 0) of
           Nothing -> state
           Just (loSrc, hiSrc) ->
             -- We calculate the new interval as the union between all possible memory locations
@@ -81,44 +81,40 @@ handleNonCF state inst =
   storeMemory dst off (R (Reg src)) =
     -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
     let intv = registers state Array.! src
-     in case getBounds intv of
+     in case getBounds intv (Just 0) of
           Nothing -> state
           Just (loSrc, hiSrc) ->
             -- We calculate the new interval as the union between all possible memory locations
             let newInterval = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [loSrc .. hiSrc]]
-             in case off of
-                  Nothing -> updateMemory dst 0 newInterval
-                  Just off' -> updateMemory dst off' newInterval
+             in updateMemory dst off newInterval
   storeMemory dst off (Imm src) =
     -- If we have an immediate value, then we update the possible destinations with it
     let newInt = Value $ Interval (Val $ fromIntegral src) (Val $ fromIntegral src)
-     in case off of
-          Nothing -> updateMemory dst 0 newInt
-          Just off' -> updateMemory dst off' newInt
-  updateMemory :: Int -> MemoryOffset -> IntervalM -> State
+     in updateMemory dst off newInt
+  updateMemory :: Int -> Maybe MemoryOffset -> IntervalM -> State
   updateMemory dst off newInterval =
     let dst' = registers state Array.! dst
-     in case getBounds dst' of
+     in case getBounds dst' off of
           Nothing -> state
           Just (loDst, hiDst) ->
             let
-              updates = [(fromIntegral i, newInterval) | i <- [(loDst - off) .. (hiDst - off)]]
+              updates = [(fromIntegral i, newInterval) | i <- [loDst .. hiDst]]
              in
               state{memory = memory state // updates}
-  getBounds (Value (Interval lo hi)) =
+  getBounds :: IntervalM -> Maybe MemoryOffset -> Maybe (Int, Int)
+  getBounds (Value (Interval lo' hi')) off' =
     -- Make sure we have some memory we can index
-    if lo == PosInf || hi == NegInf
-      then
-        Nothing
-      else
-        let lo' = case max lo (Val 0) of
-              Val x' -> x'
+    let off = maybe 0 fromIntegral off'
+     in let lo = case max lo' (Val (-off)) of
+              -- Lower bound has to be the maximum of -off and our item. We then add off after
+              Val x' -> x' + off
               _ -> 0
-            hi' = case min hi (Val 511) of
-              Val x' -> x'
-              _ -> 511
-         in Just (fromInteger lo', fromInteger hi')
-  getBounds Bottom = Nothing
+         in let hi = case min hi' (Val (511 - off)) of
+                  -- Upper bound has to be the maximum of 511-off and our item. We then add off after
+                  Val x' -> x' + off
+                  _ -> 511
+             in Just (fromInteger lo, fromInteger hi)
+  getBounds Bottom _ = Nothing
 
 handleTrans :: State -> Trans -> State
 handleTrans state (NonCF inst) = handleNonCF state inst
