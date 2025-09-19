@@ -161,11 +161,11 @@ lessThanInterval i1@(Interval a _) i2@(Interval _ d) = do
   i1' <- intersectInterval i1 (Interval NegInf (subVal d 1))
   i2' <- intersectInterval (Interval (addVal a 1) PosInf) i2
   return (i1', i2')
-  where
-    subVal (Val x) y = Val (x - y)
-    subVal x _ = x
-    addVal (Val x) y = Val (x + y)
-    addVal x _ = x
+ where
+  subVal (Val x) y = Val (x - y)
+  subVal x _ = x
+  addVal (Val x) y = Val (x + y)
+  addVal x _ = x
 
 lessThanEqualInterval :: Interval -> Interval -> BottomM (Interval, Interval)
 lessThanEqualInterval i1@(Interval a _) i2@(Interval _ d) = do
@@ -318,8 +318,8 @@ instance Num IntervalM where
 type Mem = Array Int IntervalM
 
 data State = State
-  { registers :: Array Int IntervalM,
-    memory :: Mem
+  { registers :: Array Int IntervalM
+  , memory :: Mem
   }
   deriving (Eq)
 
@@ -347,12 +347,12 @@ initState =
     { registers =
         array
           (0, numRegs - 1)
-          [(i, topIntervalM) | i <- [0 .. numRegs - 1]],
-      memory =
+          [(i, topIntervalM) | i <- [0 .. numRegs - 1]]
+    , memory =
         array
           (0, memSize - 1)
           [ (i, topIntervalM)
-            | i <- [0 .. memSize - 1]
+          | i <- [0 .. memSize - 1]
           ]
     }
 
@@ -364,13 +364,13 @@ unionArray a1 a2 =
 unionState :: State -> State -> State
 unionState s1 s2 =
   State
-    { registers = unionArray (registers s1) (registers s2),
-      memory = unionArray (memory s1) (memory s2)
+    { registers = unionArray (registers s1) (registers s2)
+    , memory = unionArray (memory s1) (memory s2)
     }
 
 bottomState :: State
 bottomState =
   State
-    { registers = listArray (0, numRegs - 1) (repeat Bottom),
-      memory = listArray (0, memSize - 1) (repeat Bottom)
+    { registers = listArray (0, numRegs - 1) (repeat Bottom)
+    , memory = listArray (0, memSize - 1) (repeat Bottom)
     }

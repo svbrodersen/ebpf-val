@@ -1,5 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-
 module Main where
 
 import Data.Array as Array
@@ -14,59 +12,87 @@ import Interpreter
 import qualified System.Environment as Sys
 import Text.Printf
 
+wideningCount :: Int
+wideningCount = 7
+
+narrowingCount :: Int
+narrowingCount = wideningCount + 7
+
 -- Extends the unionState function to use widening
 widenState :: State -> State -> State
 widenState s1 s2 =
   State
-    { registers = widenArray (registers s1) (registers s2),
-      memory = widenArray (memory s1) (memory s2)
+    { registers = widenArray (registers s1) (registers s2)
+    , memory = widenArray (memory s1) (memory s2)
     }
-  where
-    widenArray a1 a2 =
-      let (lo, hi) = bounds a1
-       in array (lo, hi) [(i, wideningIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
+ where
+  widenArray a1 a2 =
+    let (lo, hi) = bounds a1
+     in array (lo, hi) [(i, wideningIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
 
 narrowingState :: State -> State -> State
 narrowingState s1 s2 =
   State
-    { registers = narrowingArray (registers s1) (registers s2),
-      memory = narrowingArray (memory s1) (memory s2)
+    { registers = narrowingArray (registers s1) (registers s2)
+    , memory = narrowingArray (memory s1) (memory s2)
     }
-  where
-    narrowingArray :: Array Int IntervalM -> Array Int IntervalM -> Array Int IntervalM
-    narrowingArray a1 a2 =
-      let (lo, hi) = bounds a1
-       in array (lo, hi) [(i, narrowingIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
+ where
+  narrowingArray :: Array Int IntervalM -> Array Int IntervalM -> Array Int IntervalM
+  narrowingArray a1 a2 =
+    let (lo, hi) = bounds a1
+     in array (lo, hi) [(i, narrowingIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
 
 unionState :: State -> State -> State
 unionState s1 s2 =
   State
-    { registers = unionArray (registers s1) (registers s2),
-      memory = unionArray (memory s1) (memory s2)
+    { registers = unionArray (registers s1) (registers s2)
+    , memory = unionArray (memory s1) (memory s2)
     }
-  where
-    unionArray :: Array Int IntervalM -> Array Int IntervalM -> Array Int IntervalM
-    unionArray a1 a2 =
-      let (lo, hi) = bounds a1
-       in array (lo, hi) [(i, unionIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
+ where
+  unionArray :: Array Int IntervalM -> Array Int IntervalM -> Array Int IntervalM
+  unionArray a1 a2 =
+    let (lo, hi) = bounds a1
+     in array (lo, hi) [(i, unionIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
 
-workSetAlgorithm :: CFG -> Map Label State -> CFG -> Map Label State
-workSetAlgorithm graph states worklist
+workSetAlgorithm :: CFG -> Map Label State -> CFG -> Map Label Int -> Map Label State
+workSetAlgorithm graph states worklist counters
   | Set.null worklist = states
   | otherwise =
-      let (l, instr, next) = Set.elemAt 0 worklist
-          current_state = states Map.! l
+      let (l, instr, n) = Set.elemAt 0 worklist
           w' = Set.deleteAt 0 worklist
-          newState = handleTrans current_state instr
-          newStates = trace ("Label: " ++ show l ++ "\nnewState: " ++ show (registers newState)) $ Map.insertWith unionState next newState states
-          successors = getSuccessors next
-       in if current_state == newState
+          current_state = getPreviousState l
+          evalState = trace ("Got curr_state: " ++ show (registers current_state)) $ handleTrans current_state instr
+          oldState = states Map.! n
+          newState = unionState evalState oldState
+          newStates = trace ("Label: " ++ show n ++ "\nnewState: " ++ show (registers newState)) $ Map.insert n newState states
+          successors = getSuccessors n
+       in if oldState == newState
             -- We don't add anything else
-            then workSetAlgorithm graph newStates w'
-            -- Here we add all the elements that depend on us
-            else workSetAlgorithm graph newStates (Set.union w' successors)
-  where
-    getSuccessors n' = Set.filter (\(l', _, _) -> l' == n') graph
+            then workSetAlgorithm graph states w' counters
+            else
+              -- Check the counter to figure out if we widen or not
+              let total_count = counters Map.! n
+                  newWorkset = Set.union w' successors
+                  res
+                    -- Regular work set algorithm, if we have reached the node less than 4 times
+                    | (total_count < wideningCount) =
+                        let newCount = Map.insert n (total_count + 1) counters
+                         in workSetAlgorithm graph newStates newWorkset newCount
+                    -- Widening if we have been here 4 times.
+                    | (total_count == wideningCount) =
+                        let newStates' = Map.insert n (widenState oldState newState) states
+                            newCount = Map.insert n (total_count + 1) counters
+                         in workSetAlgorithm graph newStates' newWorkset newCount
+                    -- Narrow state until we have reached the node 10 times
+                    | (wideningCount < total_count) && (total_count < narrowingCount) =
+                        let newStates' = Map.insert n (narrowingState oldState newState) states
+                            newCount = Map.insert n (total_count + 1) counters
+                         in workSetAlgorithm graph newStates' newWorkset newCount
+                    | otherwise = states
+               in res
+ where
+  getSuccessors n' = Set.filter (\(l', _, _) -> l' == n') graph
+  getPreviousState l = states Map.! l
 
 allLabels :: CFG -> Set Label
 allLabels graph =
@@ -97,9 +123,10 @@ main =
               do
                 printf "The eBPF file %s has %d instructions\n" ebpfFile (length prog)
                 let graph = cfg prog
-                    labels = allLabels graph
-                    initial_states = Map.fromList [if l == 0 then (l, initState) else (l, bottomState) | l <- Set.toList labels]
-                    final_states = workSetAlgorithm graph initial_states graph
+                    labels = Set.toList $ allLabels graph
+                    initial_states = Map.fromList [(l, bottomState) | l <- labels]
+                    initial_counters = Map.fromList [(l, 0) | l <- labels]
+                    final_states = workSetAlgorithm graph initial_states graph initial_counters
                     (_, exit) = Map.findMax final_states
                     output = printf (show exit)
                 writeFile outFile output
