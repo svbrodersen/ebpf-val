@@ -1,13 +1,8 @@
 module Interpreter where
 
 import Data.Array as Array
-import Data.Int (Int64)
-import Data.Map as Map
-import Data.Set as Set
-import Debug.Trace
 import Definitions
 import Ebpf.Asm as Asm
-import Ebpf.AsmParser (SpliceConstructors (rRegImm))
 import Ebpf_cfg
 import Prelude
 

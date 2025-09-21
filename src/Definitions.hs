@@ -49,7 +49,9 @@ mulBound (Val x) (Val y) = Value $ Val (x * y)
 mulBound _ _ = Bottom
 
 divBound :: Bound -> Bound -> BottomM Bound
-divBound (Val x) (Val y) = Value $ Val (x `div` y)
+divBound (Val x) (Val y)
+  | y == 0 = Bottom
+  | otherwise = Value $ Val (x `div` y)
 divBound _ PosInf = Value $ Val 0
 divBound _ NegInf = Value $ Val 0
 divBound NegInf (Val y)
@@ -239,7 +241,6 @@ wrapFunc f m1 m2 = do
   i2 <- m2
   f i1 i2
 
--- Order structure
 isSubsetEqualM :: IntervalM -> IntervalM -> Bool
 isSubsetEqualM Bottom _ = True
 isSubsetEqualM _ Bottom = False

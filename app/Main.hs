@@ -125,7 +125,7 @@ main =
                     labels = Set.toList $ allLabels graph
                     initial_states = Map.fromList [(l, bottomState) | l <- labels]
                     initial_counters = Map.fromList [(l, 0) | l <- labels]
-                    final_states = workSetAlgorithm graph initial_states graph initial_counters
+                    final_states = workSetAlgorithm graph initial_states (Set.singleton $ Set.elemAt 0 graph) initial_counters
                     (_, exit) = Map.findMax final_states
                     output = printf (printState exit)
                 writeFile outFile output

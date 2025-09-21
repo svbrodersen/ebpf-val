@@ -1,0 +1,2 @@
+\section{Conclusion}
+This report has outlined the design of a static value analysis for a subset of eBPF. The analysis uses abstract interpretation with an interval domain to approximate the values of registers and memory. We have discussed the abstract domain, state representation, abstract transformers, and the iterative algorithm to find a fixpoint. The use of widening is crucial for guaranteeing termination of the analysis in the presence of loops.

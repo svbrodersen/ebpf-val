@@ -1,0 +1,13 @@
+\begin{thebibliography}{1}
+
+\bibitem{ebpf}
+Ken~Friis Larsen.
+\newblock {eBPF Tools}, 2025.
+\newblock Accessed: 2025-09-21.
+
+\bibitem{mine}
+Antoine Miné.
+\newblock Tutorial on static inference of numeric invariants by abstract interpretation.
+\newblock {\em Foundations and Trends® in Programming Languages}, 4(3-4):120--372, 2017.
+
+\end{thebibliography}

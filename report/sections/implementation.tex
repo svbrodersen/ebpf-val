@@ -1,0 +1,136 @@
+\section{Implementation}
+
+\subsection{Definitions}\label{sec:def}
+\begin{lstlisting}[language={haskell}, caption={Bound data type}, label={lst:def}]
+data Bound = NegInf | Val Integer | PosInf deriving (Eq, Ord)
+data Interval = Interval Bound Bound deriving (Eq, Ord)
+
+// Bottom M
+data BottomM a = Bottom | Value a
+  deriving (Eq, Ord)
+\end{lstlisting}
+As mentioned I make use of the infinite interval. This is of course not
+something machines can correctly represent, and as such I use the Bound data
+type, which's definition can be seen in Listing~\ref{lst:def}. Bound can thus
+take up 3 different "values". Either it is NegInf($-\infty$), some value or
+PosInf($\infty$). Note, that because we define it in the order we have, then
+NegInf will be seen as smaller than any Val and PosInf will be seen as larger
+than any Val. This allows us to simply use the default min and max functions on
+the Bound type.
+
+Along with Bound there is also the definition of the Interval type, which
+contains two Bound values, the first indicating the lower bound and the second
+indicating the upper bound.
+
+This now allows me to represent all the interval values except for $\bot$. For
+$\bot$ instead of simply adding the value to the Interval type, I decided to
+make use of BottomM. BottomM is defined exactly the same way as the Maybe monad
+usually used in Haskell. The only difference between the two is that BottomM
+makes use of Bottom instead of Nothing, and Value x instead of Just x.
+
+This choice was made as the large majority of operations on both intervals and
+bounds return Bottom, if any of the inputs are Bottom. This is the exact same
+functionality from the Maybe monad, and saves a lot of repetitive code checking
+the specific cases.
+
+\subsection{Operator implementation}
+The definitions from Section~\ref{sec:def} allows me to define functions as the type signature:
+\begin{lstlisting}[language={haskell}]
+binaryBound :: Bound -> Bound -> BottomM Bound
+unaryBound :: Bound -> BottomM Bound
+
+// Interval operators
+type IntervalM = BottomM Interval
+binaryInterval ::  Interval -> Interval -> IntervalM
+unaryInterval ::  Interval -> Interval -> IntervalM
+
+// Interval comparisons
+binaryInterval :: Interval -> Interval -> 
+                  BottomM (Interval, Interval)
+unaryInterval ::  Interval -> 
+                  BottomM (Interval, Interval)
+\end{lstlisting}
+
+\subsubsection*{Examples}
+\begin{lstlisting}[language={haskell}, caption={Full division implementation}, label={lst:div}]
+divBound :: Bound -> Bound -> BottomM Bound
+divBound (Val x) (Val y)
+  | y == 0 = Bottom
+  | otherwise = Value $ Val (x `div` y)
+divBound _ PosInf = Value $ Val 0
+divBound _ NegInf = Value $ Val 0
+divBound NegInf (Val y)
+  | y > 0 = Value NegInf
+  | y < 0 = Value PosInf
+  | y == 0 = Bottom
+divBound PosInf (Val y)
+  | y > 0 = Value PosInf
+  | y < 0 = Value NegInf
+  | y == 0 = Bottom
+divBound _ _ = Bottom
+
+divInterval :: Interval -> Interval -> IntervalM
+divInterval ab@(Interval a b) cd@(Interval c d)
+  | Val 1 <= c = do
+      ac <- divBound a c
+      ad <- divBound a d
+      bc <- divBound b c
+      bd <- divBound b d
+      Value $ Interval (min ac ad) (max bc bd)
+  | d <= Val (-1) = do
+      bc <- divBound b c
+      bd <- divBound b d
+      ac <- divBound a c
+      ad <- divBound a d
+      Value $ Interval (min bc bd) (max ac ad)
+  | otherwise =
+      let first = do
+            t1 <- intersectInterval cd (Interval (Val 1) PosInf)
+            divInterval ab t1
+          second = do
+            t2 <- intersectInterval 
+                    cd
+                    (Interval NegInf (Val (-1)))
+            divInterval ab t2
+       in unionIntervalM first second
+\end{lstlisting}  
+\paragraph{Division:}
+As an example of division of intervals are provided in Listing~\ref{lst:div}.
+divBound follows our general intuition, where the main difference is that
+division by 0 is not undefined, but rather just returns bottom. 
+
+The divInterval is more interesting. It first makes sure that c is greater than
+or equal to 1. That way we are not dividing by 0, which would result in bottom,
+which we do not want for the entire interval. If the check for c fails, then we
+instead attempt to evaluate if d is less than or equal to -1. This would be the
+case, if the entire interval is negative. If both of these evaluations fails,
+then we know that we do not have an entirely positive nor entirely negative
+interval, and as such we go to the recursive call. 
+
+In the recursive call, we simply find the intersection between all possible
+positive numbers and our divisor, and attempt to divide ab with it and then the
+same for the negative values. At last, we just take the union between the two
+intervals.
+
+In this case, there is never the possibility of dividing by zero, but using the
+bottomM monad, we don't have to check for this case explicitly.
+
+
+\begin{lstlisting}[language={haskell}, caption={Union interval implementation}, label={lst:union}]
+unionIntervalM :: IntervalM -> IntervalM -> IntervalM
+unionIntervalM m1 m2 =
+  case (m1, m2) of
+    (Bottom, Value i2) -> Value i2
+    (Value i1, Bottom) -> Value i1
+    (Value i1, Value i2) -> unionInterval i1 i2
+    (_, _) -> Bottom
+\end{lstlisting}
+\paragraph{Union Interval:} The union interval is the one operator for which Bottom is the neutral element.
+This means, that if one of the inputs is Bottom, then we should not just return
+Bottom ourselves. As such, the implementation of union can be seen in
+Listing~\ref{lst:union}, where if only one input is bottom, then we simply
+return the other input.
+
+
+
+\subsection{Work-set algorithm}\label{sec:workset}

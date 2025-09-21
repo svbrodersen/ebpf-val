@@ -1,0 +1,48 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{stmaryrd}
+
+\title{Value Analysis for eBPF}
+\author{Simon}
+\date{\today}
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents a value analysis for a subset of the eBPF language, called
+micro-eBPF. The analysis is based on the theory of abstract interpretation
+using intervals to approximate the set of possible values for registers and
+  memory at each program state.
+\end{abstract}
+
+\tableofcontents
+
+\input{sections/introduction}
+\input{sections/implementation}
+\input{sections/future_work}
+\input{sections/conclusion}
+
+
+\bibliographystyle{plain}   % or try alpha, unsrt, abbrv
+\bibliography{refs}         % refs.bib file
+
+\end{document}
