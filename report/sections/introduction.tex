@@ -1,4 +1,4 @@
-\section{Introduction}
+\section{Introduction}\label{sec:introduction}
 The goal of this project is to implement a value analysis for a subset of the
 eBPF language. This analysis aims to compute an approximation of the values of
 registers and memory cells at each program point. The analysis is based on the
@@ -9,7 +9,7 @@ ebpf-tools\cite{ebpf}. Ebpf-tools is able to generate control-flow graphs
 from the micro-ebpf language. These control-flow graphs are the foundation of
 the implementation provided within this project.
 
-\subsection*{Abstract domain}
+\subsection{Abstract domain}
 Throughout this project, I have used the infinite intervals to represent the
 possible values of both registers and memory locations. That is to say, that an
 abstract value is an interval $[l, u]$ where $l, u \in \{-\infty, \infty\}$.
@@ -24,14 +24,14 @@ previously, or they could be some unreachable state denoted by $\bot$. Also,
 the interval $\{-\infty, \infty\}$ itself is the representation of $\top$,
 indicating that the register/memory cell can take on any value.
 
-\subsection*{Modelling program states}
+\subsection{Modelling program states}
 The modelling of program states are best described by an example. Say we have
 some arbitrary node, n, within the control flow graph. Now given some
 transition $t$ from $n \to n'$ through some expression $exp$, then the state at
 $n'$, namely $s'$, is given by:
 
 \begin{align}
-  s' &= (\llbracket exp \rrbracket s) \sqcup_{Itv} t'
+  s' &= (\llbracket exp \rrbracket s) \sqcup_{Itv} t' \label{eq:1}
 \end{align}
 
 Where $t'$ is any other transition, which also ends in n'. That is to say, that
@@ -41,14 +41,14 @@ initialize all states to the neutral element of the interval union, which is
 $\bot$.
 
 
-\subsection*{Abstract interpretation of expressions}
+\subsection{Abstract interpretation of expressions}
 In general my implementation follows the abstract interpretation of expressions
 seen in mine\cite{mine}. However, mine does not provide a definition for the
 binary operators. In my case I was not able to get the time to implement the
 binary operators. As such, if we ever see a binary operator, then we
 immediately just return $\top$.
 
-\subsubsection*{Memory lookups}
+\subsubsection{Memory lookups}\label{sec:introductionMem}
 For a memory lookup \texttt{Mem[ri]}, the abstract value of the register
 \texttt{ri} determines the possible memory addresses to be read. Let $[l, u]$
 denote the abstract interval of \texttt{ri}. The set of possible addresses is
@@ -64,7 +64,7 @@ cells at the same time, if we are using a register, which at the current state
 is not a constant value.
 
 
-\subsection*{Iteration strategy}
+\subsection{Iteration strategy}
 In this project the iteration strategy used is the work-set algorithm. This
 method was used to avoid re-evaluating parts of the program, that were not
 affected by the previous state. For more details on the specific implementation
@@ -72,20 +72,20 @@ see Section~\ref{sec:workset}.
 
 The work-set algorithm was implemented with widening and narrowing. Widening
 ($\nabla$) is defined as in Mine\cite{mine}, i.e. we have that: 
-\begin{align*}
+\begin{align}\label{eq:widening}
   [l_1, u_1] \nabla [l_2, u_2] = [&\text{if } l_2 < l_1 \text{
   then } - \infty \text{ else } l_1, \\ 
   &\text{if } u_2 > u_1 \text{ then }
-  \infty \text{ else } u_1]
-\end{align*}
+  \infty \text{ else } u_1] \nonumber
+\end{align}
 
 And Narrowing ($\Delta$) is defined as:
-\begin{align*}
+\begin{align}\label{eq:narrowing}
   [l_1, u_1] \Delta [l_2, u_2] = [&\text{if } l_1 = -\infty \text{
   then } l_2 \text{ else } l_1, \\ 
   &\text{if } u_1 = \infty \text{ then }
-  u_2 \text{ else } u_1]
-\end{align*}
+  u_2 \text{ else } u_1]\nonumber
+\end{align}
 
 To not overdo this, I included a counter for each node in the control flow
 graph. If we reach the node x times, then we perform one widening step.

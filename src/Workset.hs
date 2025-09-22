@@ -51,41 +51,43 @@ unionState s1 s2 =
      in array (lo, hi) [(i, unionIntervalM (a1 Array.! i) (a2 Array.! i)) | i <- [lo .. hi]]
 
 workSetAlgorithm :: CFG -> Map Label State -> CFG -> Map Label Int -> Map Label State
-workSetAlgorithm graph states worklist counters
-  | Set.null worklist = states
+workSetAlgorithm graph states workset counters
+  | Set.null workset = states
   | otherwise =
-      let (l, instr, n) = Set.elemAt 0 worklist
-          w' = Set.deleteAt 0 worklist
+      let (l, instr, n) = Set.elemAt 0 workset
+          w' = Set.deleteAt 0 workset
           current_state = getPreviousState l
           evalState = handleTrans current_state instr
           oldState = states Map.! n
           newState = unionState evalState oldState
-          newStates = Map.insert n newState states
-          successors = getSuccessors n
        in if oldState == newState
             -- We don't add anything else
             then workSetAlgorithm graph states w' counters
             else
-              -- Check the counter to figure out if we widen or not
-              let total_count = counters Map.! n
-                  newWorkset = Set.union w' successors
-                  res
-                    -- Regular work set algorithm, if we have reached the node less than 4 times
-                    | (total_count < wideningCount) =
-                        let newCount = Map.insert n (total_count + 1) counters
-                         in workSetAlgorithm graph newStates newWorkset newCount
-                    -- Widening if we have been here 4 times.
-                    | (total_count == wideningCount) =
-                        let newStates' = Map.insert n (widenState oldState newState) states
-                            newCount = Map.insert n (total_count + 1) counters
-                         in workSetAlgorithm graph newStates' newWorkset newCount
-                    -- Narrow state until we have reached the node 10 times
-                    | (wideningCount < total_count) && (total_count < narrowingCount) =
-                        let newStates' = Map.insert n (narrowingState oldState newState) states
-                            newCount = Map.insert n (total_count + 1) counters
-                         in workSetAlgorithm graph newStates' newWorkset newCount
-                    | otherwise = states
-               in res
+              workSet' w' n newState oldState
  where
   getSuccessors n' = Set.filter (\(l', _, _) -> l' == n') graph
   getPreviousState l = states Map.! l
+  workSet' w' n newState oldState =
+    -- Check the counter to figure out if we widen or not
+    let total_count = counters Map.! n
+        successors = getSuccessors n
+        newWorkset = Set.union w' successors
+        newStates = Map.insert n newState states
+        res
+          -- Regular work set algorithm, if we have reached the node less than 4 times
+          | (total_count < wideningCount) =
+              let newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates newWorkset newCount
+          -- Widening if we have been here 4 times.
+          | (total_count == wideningCount) =
+              let newStates' = Map.insert n (widenState oldState newState) states
+                  newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates' newWorkset newCount
+          -- Narrow state until we have reached the node 10 times
+          | (wideningCount < total_count) && (total_count < narrowingCount) =
+              let newStates' = Map.insert n (narrowingState oldState newState) states
+                  newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates' newWorkset newCount
+          | otherwise = states
+     in res

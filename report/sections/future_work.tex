@@ -1,1 +1,67 @@
 \section{Future work}
+Although the implementation seems to generally work, there are some areas,
+which I simply have not had the time to improve upon. These parts are
+referenced here as what could be worked on further.
+
+\subsection{Optimizations}
+By no means is this implementation optimal. The general goal of the project is
+to keep it as easy to understand as possible, and this has a large effect on
+the overall optimizations. There are multiple cases of this, but I will just
+mention what I think would lead to the best performance gain:
+
+\begin{itemize}
+  \item Making it such that we don't store the state of every single node. The
+    current implementation stores the state for every node in the CFG. This is
+    not efficient at all. If a node is only visited once, then we could pass
+    the state it produces directly on to the next node, and then never have to
+    save the state of the incoming node. We would most likely have to do one
+    pass through of the CFG to check for such nodes, but afterwards we would
+    save a lot of the memory usage that probably occur on larger programs.
+  \item Narrowing and Widening are currently implemented by checking every
+    single register and memory cell to see if the cell/register has changed
+    since the last state. This is highly inefficient, and it should be possible
+    to reduce the number of checked elements. For example for an instruction
+    which sends the value to a register, then we would only have to check that
+    single register. The reason this was not implemented is because of instructions such as:
+    \begin{verbatim}
+      stb [r0], 10
+    \end{verbatim}
+    Here we are writing to the memory location by the value of r0. r0 is seen
+    as an interval, so in this case we would have to handle the interval as the
+    possible memory cells that have to be updated instead of a single index.
+    For the sake of time, this was not implemented
+\end{itemize}
+
+
+\subsection{Unhandled actions}
+There are two main areas where I have taken a shortcut and not handled the instructions. Those two are explained here.
+
+\paragraph{Binary operators: } The binary operators are not evaluated, instead
+I simply return the top interval whenever we reach a binary operator. Binary
+operators would of course give us some further information about the current
+interval, but due to time constraints these were not implemented.
+
+\paragraph{Conditional jumps: } 
+In the provided snippet is how we handle the conditional jumps.
+\begin{lstlisting}[language={haskell}, numbers=none]
+case jmp of
+  Jeq -> equalInterval i1 i2
+  Jne -> notEqualInterval i1 i2
+  Jlt -> lessThanInterval i1 i2
+  Jle -> lessThanEqualInterval i1 i2
+  Jgt -> greaterThanInterval i1 i2
+  Jge -> greaterThanEqualInterval i1 i2
+  Jslt -> lessThanInterval i1 i2
+  Jsle -> lessThanEqualInterval i1 i2
+  Jsgt -> greaterThanInterval i1 i2
+  Jsge -> greaterThanEqualInterval i1 i2
+  _ -> Value (i1, i2) -- For other jumps, we don't refine
+\end{lstlisting}
+
+Here we can see, that we do not take the information about the signed and
+unsigned use into account, and we do also not match for the Jset instruction.
+The Jset instruction is simply not implemented, and we just return our input
+and with the signed and unsigned one could argue, that we should be more
+restrictive on the interval. If we ever reach an unsigned instruction, then we
+would know that the register could never be negative, instead of just using the
+default interval calculations.

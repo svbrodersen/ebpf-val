@@ -124,9 +124,12 @@ handleTrans state (Assert jmp (Reg lhs) regimm) =
                 Jne -> notEqualInterval i1 i2
                 Jlt -> lessThanInterval i1 i2
                 Jle -> lessThanEqualInterval i1 i2
-                -- Swap use of lessthan
                 Jgt -> greaterThanInterval i1 i2
                 Jge -> greaterThanEqualInterval i1 i2
+                Jslt -> lessThanInterval i1 i2
+                Jsle -> lessThanEqualInterval i1 i2
+                Jsgt -> greaterThanInterval i1 i2
+                Jsge -> greaterThanEqualInterval i1 i2
                 _ -> Value (i1, i2) -- For other jumps, we don't refine
         let (lhs_new, rhs_new) =
               case val of

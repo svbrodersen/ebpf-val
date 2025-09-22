@@ -201,6 +201,10 @@ INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang2.sty
 INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang2.sty
 INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmroman8-regular.luc
 INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmmonolt10-bold.luc
+INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmmono10-italic.luc
+INPUT ./sections/validation.tex
+INPUT ./sections/validation.tex
+INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmroman6-regular.luc
 INPUT ./sections/future_work.tex
 INPUT ./sections/future_work.tex
 INPUT ./sections/conclusion.tex

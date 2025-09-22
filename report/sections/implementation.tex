@@ -8,6 +8,17 @@ data Interval = Interval Bound Bound deriving (Eq, Ord)
 // Bottom M
 data BottomM a = Bottom | Value a
   deriving (Eq, Ord)
+
+// IntervalM
+type IntervalM = BottomM Interval
+
+type Mem = Array Int IntervalM
+
+data State = State
+  { registers :: Array Int IntervalM
+  , memory :: Mem
+  }
+  deriving (Eq)
 \end{lstlisting}
 As mentioned I make use of the infinite interval. This is of course not
 something machines can correctly represent, and as such I use the Bound data
@@ -33,7 +44,12 @@ bounds return Bottom, if any of the inputs are Bottom. This is the exact same
 functionality from the Maybe monad, and saves a lot of repetitive code checking
 the specific cases.
 
-\subsection{Operator implementation}
+At last, we have the definition of the State. The state simply contains two
+arrays. One which maps the registers to some IntervalM and then the same for
+each of the memory cells. A state is then create for each of the nodes in the
+control flow graph when initializing the setup.
+
+\subsection{Operator implementation}\label{sec:opImp}
 The definitions from Section~\ref{sec:def} allows me to define functions as the type signature:
 \begin{lstlisting}[language={haskell}]
 binaryBound :: Bound -> Bound -> BottomM Bound
@@ -132,5 +148,204 @@ Listing~\ref{lst:union}, where if only one input is bottom, then we simply
 return the other input.
 
 
+\subsection{Interpretation}
+Using ebpf-tools, we are given a control flow graph, which is represented as:
+\begin{lstlisting}[language={haskell}, numbers=none]
+  Set (Label, Trans, Label)
+\end{lstlisting}
+This means, that we are given a set of tuples, where the first element is the
+source of the transformation, followed by the transformation and at last the
+node we end in. 
+\begin{lstlisting}[language={haskell}, caption={The handleTrans functnion}, label={lst:handleTrans}]
+handleTrans :: State -> Trans -> State
+handleTrans state Unconditional = state
+handleTrans state (NonCF inst) = handleNonCF state inst
+handleTrans state (Assert jmp (Reg lhs)) regimm = ...
+\end{lstlisting}
+The handling of Trans is separated into a separate function,
+\texttt{handleTrans}, which can be seen in Listing~\ref{lst:handleTrans}. Then
+function works by getting an initial State(state), and then taking the
+transformation into account, before returning a new updated State. For example,
+for the unconditional jump, we simply return the state we got as input, as we
+gain no new information from the transformation. In the following sections, I
+will go into more details with an example of the NonCF(non-Control flow) and
+the Assert (conditional jump).
+
+
+\subsubsection{Non-Control flow}
+\begin{lstlisting}[language={haskell}, caption={handleNonCF}, label={lst:handleNonCF}, escapechar=@]
+handleNonCF :: State -> Instruction -> State
+handleNonCF state inst =
+  case inst of
+    Binary _ alu reg regimm -> handleBinary state (alu, reg, regimm)
+    Unary _ alu reg -> handleUnary state (alu, reg)
+    Store _ (Reg dst) offset regimm ->
+      storeMemory dst offset regimm
+    Load _ (Reg dst) (Reg src) offset ->
+      loadMemory dst offset (R (Reg src))
+    LoadImm (Reg dst) imm ->
+      storeMemory dst Nothing (Imm imm)
+    _ -> state
+ where
+  loadMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
+  loadMemory dst off (R (Reg src)) =
+    let intv = registers state Array.! src @\label{line:intv}@
+     in case getBounds intv off of
+          Nothing -> state
+          Just (loSrc, hiSrc) ->
+            -- We calculate the new interval as the union between all possible memory locations
+            let newInterval = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [loSrc .. hiSrc]] @\label{line:newInterval}@
+             in state{registers = registers state // [(dst, newInterval)]}
+  loadMemory dst _ (Imm imm) =
+    -- offset not used when loading immediate value
+    let newInterval = fromInteger $ fromIntegral imm
+     in state{registers = registers state // [(dst, newInterval)]}
+  ...
+  getBounds :: IntervalM -> Maybe MemoryOffset -> Maybe (Int, Int)
+  getBounds (Value (Interval lo' hi')) off' =
+    -- Make sure we have some memory we can index
+    let off = maybe 0 fromIntegral off'
+     in let lo = case max lo' (Val (-off)) of
+              -- Lower bound has to be the maximum of -off and our item. We then add off after
+              Val x' -> x' + off
+              _ -> 0
+         in let hi = case min hi' (Val (511 - off)) of
+                  -- Upper bound has to be the maximum of 511-off and our item. We then add off after
+                  Val x' -> x' + off
+                  _ -> 511
+             in Just (fromInteger lo, fromInteger hi)
+  getBounds Bottom _ = Nothing
+\end{lstlisting}
+
+
+When we are given a non-control flow action, then we gain information about the
+input state. The Binary and Unary calculations just make use of the interval
+calculations directly that we have seen from Section~\ref{sec:opImp}.
+
+I have decided to include the implementation of the loadMemory in
+Listing~\ref{lst:handleNonCF}. This function is called, when we have an ebpf
+instruction such as:
+\begin{lstlisting}[language={haskell}, numbers=none]
+ldxb r5, [r0]
+\end{lstlisting}
+Intuitively this instruction wants us to get the value x in r0, then read
+memory location x and save the result in register r5. However, as mentioned in
+Section~\ref{sec:introductionMem}, x is not a single value in our analysis and
+rather it is an interval. The way we handle this is by first gathering the
+interval value of r0 on line~\ref{line:intv}. Then, we find the valid boundary,
+i.e., we only want to take the value of the interval, which lies within our
+memory region. If we currently assume that r0 is top, then we only want to look
+in the memory of [0, 511], as anything else would be out of bounds. The bounds
+function then also takes into account if we want to offset the value, in which
+case we simply subtract the value from the interval.
+
+Once we have the valid memory interval, then on line~\ref{line:newInterval} we
+calculate the union of all these memory cells, which gives us a new single
+interval for the possible values r5 could take on after the instruction. 
+
+The store memory just works in the opposite direction. Here we load the
+immediate value or the value in a register, and then we offset when writing to
+the interval of possible memory locations.
+
 
 \subsection{Work-set algorithm}\label{sec:workset}
+\begin{lstlisting}[language={haskell}, caption={Workset algorithm}, label={lst:workset}, escapechar=@]
+workSetAlgorithm :: CFG -> Map Label State -> CFG -> Map Label Int -> Map Label State
+workSetAlgorithm graph states worklist counters
+  | Set.null worklist = states @\label{line:base}@
+  | otherwise =
+      let (l, instr, n) = Set.elemAt 0 worklist
+          w' = Set.deleteAt 0 worklist
+          current_state = getPreviousState l
+          evalState = handleTrans current_state instr
+          oldState = states Map.! n
+          newState = unionState evalState oldState
+        in if oldState == newState @\label{line:stateCheck}@
+            -- We don't add anything else
+            then workSetAlgorithm graph states w' counters
+            else
+              workSet' w' n newState oldState
+ where
+  getSuccessors n' = Set.filter (\(l', _, _) -> l' == n') graph
+  getPreviousState l = states Map.! l
+  workSet' w' n newState oldState =
+    -- Check the counter to figure out if we widen or not
+    let total_count = counters Map.! n
+        newWorkset = Set.union w' successors
+        newStates = Map.insert n newState states
+        successors = getSuccessors n
+        res
+          -- Regular work set algorithm, if we have reached the node less than 4 times
+          | (total_count < wideningCount) =
+              let newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates newWorkset newCount
+          -- Widening if we have been here 4 times.
+          | (total_count == wideningCount) =
+              let newStates' = Map.insert n (widenState oldState newState) states
+                  newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates' newWorkset newCount
+          -- Narrow state until we have reached the node 10 times
+          | (wideningCount < total_count) && (total_count < narrowingCount) =
+              let newStates' = Map.insert n (narrowingState oldState newState) states
+                  newCount = Map.insert n (total_count + 1) counters
+               in workSetAlgorithm graph newStates' newWorkset newCount
+          | otherwise = states
+     in res
+\end{lstlisting}
+This leads us to the work-set algorithm itself. The workSetAlgorithm function
+implements just this. The function takes in the full control-flow graph(graph),
+states (which maps a node(Label) to some State), the workset(a new CFG which
+contains the tuples (Label, Instr, Label) that remain in the work-set) and
+counters (a Map from node(Label) to counters(Int). 
+
+First, on line~\ref{line:base} we check the base case. If the current workset
+is empty, then we just return the states.
+
+Otherwise, we remove the first element from the workset, get the state of the
+label for which we came from, and then evaluate the instruction with
+handleTrans from before. handleTrans then gives us a new evaluated state given,
+which in Equation~\ref{eq:1}(From Section~\ref{sec:introduction}), this would
+correspond to $(\llbracket exp \rrbracket s)$. We then have to take the union
+between this new evalState and the previous state from the current node. This
+way, if a previous transition(Label, Instr, Label) has already reached this
+node, then we correctly take the union between the two.
+
+Line~\ref{line:stateCheck} then checks if this transition lead to a state
+different than the previous one. If we have the same state, then we add nothing
+to the work-set, and simply call our workSetAlgorithm again just with the
+currently checked transition.
+
+If instead we have a changed state, then we go to the workSet' function. The function works by:
+\begin{enumerate}
+  \item Get the total number of times we have reached the current Node(total\_count).
+  \item Get all transitions, which start with the current node n(successors).
+  \item Create the new work-set with all transitions that come after the current one(newWorkset).
+  \item Create the new states, where we simply substitute the current nodes state with the newState(newStates).
+  \item At last, we check how many times we have reached the current node. And do one of the following
+    \begin{itemize}
+      \item If we have reached the node less than wideningCount times, then we just call the worksetAlgorithm again with the new values, and increment the counter of the current node
+      \item If we have reached the current node wideningCount amount of times, then we do a single windening step, following the definition from Equation~\ref{eq:widening} before the recursive call.
+      \item If we have reached the current node more than wideningCount times, but less than the narrowingCount times, then we do narrowing following the definition of Equation~\ref{eq:narrowing} before the recursive call.
+      \item If we have reached the current node more than narrowingCount times, then we decide that we probably will not get a better estimate, and simply return the states stopping the recursive calls.
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Calling the worksetAlgorithm}
+\begin{lstlisting}[language={haskell}, caption={Calling the workset algorithm}, label={lst:callworkset}]
+let graph = cfg prog
+    labels = Set.toList $ allLabels graph
+    initial_states = Map.fromList [(l, bottomState) | l <- labels]
+    initial_counters = Map.fromList [(l, 0) | l <- labels]
+    final_states = workSetAlgorithm graph initial_states (Set.singleton $ Set.elemAt 0 graph) initial_counters
+    (_, exit) = Map.findMax final_states
+    output = printf (printState exit)
+\end{lstlisting}
+
+The workSetAlgorithm can then be called as shown in
+Listing~\ref{lst:callworkset}. First, we generate the empty states for each of
+the nodes, then we initialize all counters(that keep track of the number of
+times we have visited a node) to zero, before running the function. The
+function then gives us back a new Map of labels to States, and we simply return
+the largest Label as our final State, as this is when we exit the program.
+However, the final\_states variable contain the final states for all of the
+nodes within the graph.

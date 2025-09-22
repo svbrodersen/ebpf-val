@@ -1,9 +1,22 @@
-\contentsline {section}{\numberline {1}Introduction}{1}{}%
+\contentsline {section}{\numberline {1}Introduction}{2}{}%
+\contentsline {subsection}{\numberline {1.1}Abstract domain}{2}{}%
+\contentsline {subsection}{\numberline {1.2}Modelling program states}{2}{}%
+\contentsline {subsection}{\numberline {1.3}Abstract interpretation of expressions}{2}{}%
+\contentsline {subsubsection}{\numberline {1.3.1}Memory lookups}{3}{}%
+\contentsline {subsection}{\numberline {1.4}Iteration strategy}{3}{}%
 \contentsline {section}{\numberline {2}Implementation}{3}{}%
 \contentsline {subsection}{\numberline {2.1}Definitions}{3}{}%
 \contentsline {subsection}{\numberline {2.2}Operator implementation}{4}{}%
-\contentsline {paragraph}{Division:}{5}{}%
-\contentsline {paragraph}{Union Interval:}{5}{}%
-\contentsline {subsection}{\numberline {2.3}Work-set algorithm}{6}{}%
-\contentsline {section}{\numberline {3}Future work}{6}{}%
-\contentsline {section}{\numberline {4}Conclusion}{6}{}%
+\contentsline {paragraph}{Division:}{6}{}%
+\contentsline {paragraph}{Union Interval:}{6}{}%
+\contentsline {subsection}{\numberline {2.3}Interpretation}{6}{}%
+\contentsline {subsubsection}{\numberline {2.3.1}Non-Control flow}{7}{}%
+\contentsline {subsection}{\numberline {2.4}Work-set algorithm}{8}{}%
+\contentsline {subsubsection}{\numberline {2.4.1}Calling the worksetAlgorithm}{10}{}%
+\contentsline {section}{\numberline {3}Validation}{11}{}%
+\contentsline {section}{\numberline {4}Future work}{11}{}%
+\contentsline {subsection}{\numberline {4.1}Optimizations}{11}{}%
+\contentsline {subsection}{\numberline {4.2}Unhandled actions}{12}{}%
+\contentsline {paragraph}{Binary operators: }{12}{}%
+\contentsline {paragraph}{Conditional jumps: }{12}{}%
+\contentsline {section}{\numberline {5}Conclusion}{12}{}%

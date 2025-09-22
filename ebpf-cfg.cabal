@@ -54,6 +54,7 @@ test-suite ebpf-val-test
   other-modules:
     BoundSpec
     InterpreterSpec
+    WorksetSpec
 
   build-depends:
     array,
