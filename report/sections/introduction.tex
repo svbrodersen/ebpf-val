@@ -4,19 +4,19 @@ eBPF language. This analysis aims to compute an approximation of the values of
 registers and memory cells at each program point. The analysis is based on the
 principles of abstract interpretation, specifically using an interval based
 abstract domain. This report documents the design choices and implementation
-details of the analysis. The project is based upon the already implemented
-ebpf-tools\cite{ebpf}. Ebpf-tools is able to generate control-flow graphs
-from the micro-ebpf language. These control-flow graphs are the foundation of
+details of the analysis. The project builds on the already implemented
+eBPF-tools\cite{eBPF}. eBPF-tools is able to generate control-flow graphs
+from the micro-eBPF language. These control-flow graphs are the foundation of
 the implementation provided within this project.
 
 \subsection{Abstract domain}
 Throughout this project, I have used the infinite intervals to represent the
 possible values of both registers and memory locations. That is to say, that an
 abstract value is an interval $[l, u]$ where $l, u \in \{-\infty, \infty\}$.
-These infinite intervals require the use of widening, and subsequent narrowing
-to give useable results.
+These infinite intervals require the use of widening, followed by narrowing, to
+produce usable results.
 
-In the micro-ebpf language we have 11 registers (r0-r10) and a memory section
+In the micro-eBPF language we have 11 registers (r0-r10) and a memory section
 Mem, which contains 512 different cells. Throughout the implementation both
 registers and memory cells were treated in the same manner. That is to say,
 that a register/memory cell could take on any value in the interval mentioned
@@ -25,7 +25,7 @@ the interval $\{-\infty, \infty\}$ itself is the representation of $\top$,
 indicating that the register/memory cell can take on any value.
 
 \subsection{Modelling program states}
-The modelling of program states are best described by an example. Say we have
+The modelling of program states is best described by an example. Say we have
 some arbitrary node, n, within the control flow graph. Now given some
 transition $t$ from $n \to n'$ through some expression $exp$, then the state at
 $n'$, namely $s'$, is given by:
@@ -36,14 +36,14 @@ $n'$, namely $s'$, is given by:
 
 Where $t'$ is any other transition, which also ends in n'. That is to say, that
 the new state s' at node n' is given by the union of all the states that came
-before and end in the current node. For this to work probably we first
+before and end in the current node. For this to work properly, we first
 initialize all states to the neutral element of the interval union, which is
 $\bot$.
 
 
 \subsection{Abstract interpretation of expressions}
 In general my implementation follows the abstract interpretation of expressions
-seen in mine\cite{mine}. However, mine does not provide a definition for the
+seen in Miné\cite{mine}. However, Miné does not provide a definition for the
 binary operators. In my case I was not able to get the time to implement the
 binary operators. As such, if we ever see a binary operator, then we
 immediately just return $\top$.

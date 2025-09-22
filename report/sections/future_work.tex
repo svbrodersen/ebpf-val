@@ -12,11 +12,11 @@ mention what I think would lead to the best performance gain:
 \begin{itemize}
   \item Making it such that we don't store the state of every single node. The
     current implementation stores the state for every node in the CFG. This is
-    not efficient at all. If a node is only visited once, then we could pass
-    the state it produces directly on to the next node, and then never have to
-    save the state of the incoming node. We would most likely have to do one
-    pass through of the CFG to check for such nodes, but afterwards we would
-    save a lot of the memory usage that probably occur on larger programs.
+    highly inefficient. If a node is visited only once, we could pass its state
+    directly to the next node, eliminating the need to store the state of the
+    incoming node.. We would most likely have to do one pass through of the CFG
+    to check for such nodes, but afterwards we would save a lot of the memory
+    usage that probably occur on larger programs.
   \item Narrowing and Widening are currently implemented by checking every
     single register and memory cell to see if the cell/register has changed
     since the last state. This is highly inefficient, and it should be possible
@@ -58,10 +58,9 @@ case jmp of
   _ -> Value (i1, i2) -- For other jumps, we don't refine
 \end{lstlisting}
 
-Here we can see, that we do not take the information about the signed and
-unsigned use into account, and we do also not match for the Jset instruction.
-The Jset instruction is simply not implemented, and we just return our input
-and with the signed and unsigned one could argue, that we should be more
-restrictive on the interval. If we ever reach an unsigned instruction, then we
-would know that the register could never be negative, instead of just using the
-default interval calculations.
+Here we can see that signed and unsigned usage is not taken into account, and
+the Jset instruction is also not handled. The Jset instruction is simply not
+implemented, and we just return our input and with the signed and unsigned one
+could argue, that we should be more restrictive on the interval. If we ever
+reach an unsigned instruction, then we would know that the register could never
+be negative, instead of just using the default interval calculations.

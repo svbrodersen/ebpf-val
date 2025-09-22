@@ -22,7 +22,7 @@ data State = State
 \end{lstlisting}
 As mentioned I make use of the infinite interval. This is of course not
 something machines can correctly represent, and as such I use the Bound data
-type, which's definition can be seen in Listing~\ref{lst:def}. Bound can thus
+type, whose definition can be seen in Listing~\ref{lst:def}. Bound can thus
 take up 3 different "values". Either it is NegInf($-\infty$), some value or
 PosInf($\infty$). Note, that because we define it in the order we have, then
 NegInf will be seen as smaller than any Val and PosInf will be seen as larger
@@ -46,7 +46,7 @@ the specific cases.
 
 At last, we have the definition of the State. The state simply contains two
 arrays. One which maps the registers to some IntervalM and then the same for
-each of the memory cells. A state is then create for each of the nodes in the
+each of the memory cells. A state is then created for each of the nodes in the
 control flow graph when initializing the setup.
 
 \subsection{Operator implementation}\label{sec:opImp}
@@ -115,13 +115,14 @@ As an example of division of intervals are provided in Listing~\ref{lst:div}.
 divBound follows our general intuition, where the main difference is that
 division by 0 is not undefined, but rather just returns bottom. 
 
-The divInterval is more interesting. It first makes sure that c is greater than
-or equal to 1. That way we are not dividing by 0, which would result in bottom,
-which we do not want for the entire interval. If the check for c fails, then we
-instead attempt to evaluate if d is less than or equal to -1. This would be the
-case, if the entire interval is negative. If both of these evaluations fails,
-then we know that we do not have an entirely positive nor entirely negative
-interval, and as such we go to the recursive call. 
+The implementation of divInterval is more complex and requires special
+handling. It first makes sure that c is greater than or equal to 1. That way
+we are not dividing by 0, which would result in bottom, which we do not want
+for the entire interval. If the check for c fails, then we instead attempt to
+evaluate if d is less than or equal to -1. This would be the case, if the
+entire interval is negative. If both of these evaluations fails, then we know
+that we do not have an entirely positive nor entirely negative interval, and as
+such we go to the recursive call. 
 
 In the recursive call, we simply find the intersection between all possible
 positive numbers and our divisor, and attempt to divide ab with it and then the
@@ -149,7 +150,7 @@ return the other input.
 
 
 \subsection{Interpretation}
-Using ebpf-tools, we are given a control flow graph, which is represented as:
+Using eBPF-tools, we are given a control flow graph, which is represented as:
 \begin{lstlisting}[language={haskell}, numbers=none]
   Set (Label, Trans, Label)
 \end{lstlisting}
@@ -163,7 +164,7 @@ handleTrans state (NonCF inst) = handleNonCF state inst
 handleTrans state (Assert jmp (Reg lhs)) regimm = ...
 \end{lstlisting}
 The handling of Trans is separated into a separate function,
-\texttt{handleTrans}, which can be seen in Listing~\ref{lst:handleTrans}. Then
+\texttt{handleTrans}, which can be seen in Listing~\ref{lst:handleTrans}. The
 function works by getting an initial State(state), and then taking the
 transformation into account, before returning a new updated State. For example,
 for the unconditional jump, we simply return the state we got as input, as we
@@ -223,7 +224,7 @@ input state. The Binary and Unary calculations just make use of the interval
 calculations directly that we have seen from Section~\ref{sec:opImp}.
 
 I have decided to include the implementation of the loadMemory in
-Listing~\ref{lst:handleNonCF}. This function is called, when we have an ebpf
+Listing~\ref{lst:handleNonCF}. This function is called, when we have an eBPF
 instruction such as:
 \begin{lstlisting}[language={haskell}, numbers=none]
 ldxb r5, [r0]
@@ -234,7 +235,7 @@ Section~\ref{sec:introductionMem}, x is not a single value in our analysis and
 rather it is an interval. The way we handle this is by first gathering the
 interval value of r0 on line~\ref{line:intv}. Then, we find the valid boundary,
 i.e., we only want to take the value of the interval, which lies within our
-memory region. If we currently assume that r0 is top, then we only want to look
+memory region. If we currently assume that r0 is $\top$, then we only want to look
 in the memory of [0, 511], as anything else would be out of bounds. The bounds
 function then also takes into account if we want to offset the value, in which
 case we simply subtract the value from the interval.
