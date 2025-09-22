@@ -3,9 +3,6 @@
 module Definitions where
 
 import Data.Array as Array
-import Data.Map as Map
-import Data.Set (Set)
-import Ebpf_cfg (Label)
 
 data Bound = NegInf | Val Integer | PosInf deriving (Eq, Ord)
 

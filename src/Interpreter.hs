@@ -57,24 +57,19 @@ handleNonCF state inst =
   loadMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
   loadMemory dst off (R (Reg src)) =
     let intv = registers state Array.! src
-     in case getBounds intv (Just 0) of
+     in case getBounds intv off of
           Nothing -> state
           Just (loSrc, hiSrc) ->
             -- We calculate the new interval as the union between all possible memory locations
             let newInterval = Prelude.foldl unionIntervalM Bottom $ [memory state Array.! i | i <- [loSrc .. hiSrc]]
-             in case off of
-                  -- No offset when loading to register??
-                  Nothing -> state{registers = registers state // [(dst, newInterval)]}
-                  Just _ -> state{registers = registers state // [(dst, newInterval)]}
-  loadMemory dst off (Imm imm) =
+             in state{registers = registers state // [(dst, newInterval)]}
+  loadMemory dst _ (Imm imm) =
+    -- offset not used when loading immediate value
     let newInterval = fromInteger $ fromIntegral imm
-     in case off of
-          -- We should not have offset if we are loading into a register
-          Nothing -> state{registers = registers state // [(dst, newInterval)]}
-          Just _ -> state{registers = registers state // [(dst, newInterval)]}
+     in state{registers = registers state // [(dst, newInterval)]}
   storeMemory :: Int -> Maybe MemoryOffset -> RegImm -> State
   storeMemory dst off (R (Reg src)) =
-    -- If it is a register, then we want to load the memory pointed to by the register, and then update the interval
+    -- When storing, then the offset is on the destination
     let intv = registers state Array.! src
      in case getBounds intv (Just 0) of
           Nothing -> state
@@ -84,7 +79,7 @@ handleNonCF state inst =
              in updateMemory dst off newInterval
   storeMemory dst off (Imm src) =
     -- If we have an immediate value, then we update the possible destinations with it
-    let newInt = Value $ Interval (Val $ fromIntegral src) (Val $ fromIntegral src)
+    let newInt = fromInteger $ fromIntegral src
      in updateMemory dst off newInt
   updateMemory :: Int -> Maybe MemoryOffset -> IntervalM -> State
   updateMemory dst off newInterval =
