@@ -1,12 +1,11 @@
 module WorksetSpec where
 
-import Data.Array ((!), (//))
+import Data.Array ((!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Definitions
 import Ebpf.Asm
 import Ebpf_cfg
-import Interpreter
 import Test.Hspec
 import Workset
 

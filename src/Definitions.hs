@@ -38,7 +38,7 @@ mulBound NegInf (Val x)
 mulBound PosInf (Val x)
   | x > 0 = Value PosInf
   | x < 0 = Value NegInf
-  -- Non-standard mentioned in Mine
+  -- Non-standard mentioned in Miné
   | x == 0 = Value $ Val 0
 mulBound (Val x) NegInf = mulBound NegInf (Val x)
 mulBound (Val x) PosInf = mulBound PosInf (Val x)
