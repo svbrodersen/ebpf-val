@@ -89,5 +89,5 @@ workSetAlgorithm graph states workset counters
               let newStates' = Map.insert n (narrowingState oldState newState) states
                   newCount = Map.insert n (total_count + 1) counters
                in workSetAlgorithm graph newStates' newWorkset newCount
-          | otherwise = states
+          | otherwise = workSetAlgorithm graph newStates w' counters
      in res
