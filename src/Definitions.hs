@@ -297,8 +297,8 @@ narrowingInterval (Interval l1 u1) (Interval l2 u2) =
    in Value $ Interval l u
 
 narrowingIntervalM :: IntervalM -> IntervalM -> IntervalM
-narrowingIntervalM i Bottom = i
-narrowingIntervalM Bottom i = i
+narrowingIntervalM _ Bottom = Bottom
+narrowingIntervalM Bottom _ = Bottom
 narrowingIntervalM m1 m2 = wrapFunc narrowingInterval m1 m2
 
 bitWiseIntervalM :: IntervalM -> IntervalM -> IntervalM
